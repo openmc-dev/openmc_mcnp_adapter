@@ -172,5 +172,3 @@ def parse(filename):
     data = parse_data(data_section)
 
     return cells, surfaces, data
-
-
