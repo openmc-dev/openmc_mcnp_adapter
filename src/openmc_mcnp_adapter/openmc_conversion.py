@@ -11,11 +11,10 @@ import openmc
 from openmc.data import get_thermal_name
 from openmc.data.ace import get_metadata
 from openmc.model.surface_composite import (
-    Box, CompositeSurface,
     RightCircularCylinder as RCC,
     RectangularParallelepiped as RPP
 )
-import openmc.model.surface_composite as surface_composite
+from openmc.model import surface_composite
 
 from .parse import parse, float_, _COMPLEMENT_RE, _CELL_FILL_RE
 
@@ -222,7 +221,7 @@ def get_openmc_surfaces(surfaces, data):
             surf = RPP(xmin, xmax, ymin, ymax, zmin, zmax)
         elif s['mnemonic'] == 'box':
             coeffs = list(map(float_, s['coefficients'].split()))
-            surf = Box(coeffs[:3], coeffs[3:6], coeffs[6:9], coeffs[9:])
+            surf = surface_composite.Box(coeffs[:3], coeffs[3:6], coeffs[6:9], coeffs[9:])
         else:
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
@@ -242,7 +241,7 @@ def get_openmc_surfaces(surfaces, data):
         openmc_surfaces[s['id']] = surf
 
         # For macrobodies, we also need to add generated surfaces to dictionary
-        if isinstance(surf, CompositeSurface):
+        if isinstance(surf, surface_composite.CompositeSurface):
             openmc_surfaces.update((-surf).get_surfaces())
 
     return openmc_surfaces
@@ -325,7 +324,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
             # Update surfaces dictionary with new surfaces
             for surf_id, surf in c['_region'].get_surfaces().items():
                 surfaces[surf_id] = surf
-                if isinstance(surf, CompositeSurface):
+                if isinstance(surf, surface_composite.CompositeSurface):
                     surfaces.update((-surf).get_surfaces())
 
     has_cell_complement_ordered = []
