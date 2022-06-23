@@ -23,11 +23,26 @@ _NUM_RE = re.compile(r'(\d)([+-])(\d)')
 
 
 def float_(val):
+    """Convert scientific notation literals that don't have an 'e' in them to float"""
     return float(_NUM_RE.sub(r'\1e\2\3', val))
 
 
 def parse_cell(line):
+    """Parse cell card into dictionary of information
+
+    Parameters
+    ----------
+    line : str
+        Single MCNP cell card
+
+    Returns
+    -------
+    dict
+        Dictionary with cell information
+
+    """
     if 'like' in line.lower():
+        # TODO: Move to OpenMC conversion
         raise NotImplementedError('like N but form not supported')
         # Handle LIKE n BUT form
         m = _CELL2_RE.match(line.lower())
@@ -61,6 +76,19 @@ def parse_cell(line):
 
 
 def parse_surface(line):
+    """Parse surface card into dictionary of information
+
+    Parameters
+    ----------
+    line : str
+        Single MCNP surface card
+
+    Returns
+    -------
+    dict
+        Dictionary with surface information
+
+    """
     m = _SURFACE_RE.match(line)
     if m is not None:
         g = m.groups()
@@ -76,6 +104,7 @@ def parse_surface(line):
         if g[1] is not None:
             if int(g[1]) < 0:
                 surface['periodic'] = int(g[1])
+                # TODO: Move into OpenMC conversion
                 raise NotImplementedError('Periodic boundary conditions not supported')
             else:
                 surface['tr'] = int(g[1])
@@ -85,6 +114,20 @@ def parse_surface(line):
 
 
 def parse_data(section):
+    """Parse data block into dictionary of information
+
+    Parameters
+    ----------
+    line : str
+        MCNP data block
+
+    Returns
+    -------
+    dict
+        Dictionary with data-block information
+
+    """
+
     data = {'materials': defaultdict(dict), 'tr': {}}
 
     lines = section.split('\n')
@@ -130,7 +173,20 @@ def parse_data(section):
     return data
 
 
-def get_sections(filename):
+def split_mcnp(filename):
+    """Split MCNP file into three strings, one for each block
+
+    Parameters
+    ----------
+    filename : str
+        Path to MCNP file
+
+    Returns
+    -------
+    list of str
+        List containing one string for each block
+
+    """
     # Find beginning of cell section
     text = open(filename, 'r').read()
     m = re.search(r'^[ \t]*(\d+)[ \t]+', text, flags=re.MULTILINE)
@@ -139,6 +195,23 @@ def get_sections(filename):
 
 
 def sanitize(section):
+    """Sanitize one section of an MCNP input
+
+    This function will remove comments, join continuation lines into a single
+    line, and expand repeated numbers explicitly.
+
+    Parameters
+    ----------
+    section : str
+        String representing one section of an MCNP input
+
+    Returns
+    -------
+    str
+        Sanitized input section
+
+    """
+
     # Remove end-of-line comments
     section = re.sub('\$.*$', '', section, flags=re.MULTILINE)
 
@@ -159,8 +232,25 @@ def sanitize(section):
 
 
 def parse(filename):
+    """Parse an MCNP file and return information from three main blocks
+
+    Parameters
+    ----------
+    filename : str
+        Path to MCNP file
+
+    Returns
+    -------
+    cells : list
+        List of dictionaries, where each dictionary contains information for one cell
+    surfaces : list
+        List of dictionaries, where each dictionary contains information for one surface
+    data : dict
+        Dictionary containing data-block information, including materials
+
+    """
     # Split file into main three sections (cells, surfaces, data)
-    sections = get_sections(filename)
+    sections = split_mcnp(filename)
 
     # Sanitize lines (remove comments, continuation lines, etc.)
     cell_section = sanitize(sections[0])
