@@ -1,3 +1,4 @@
+import argparse
 from math import pi
 import re
 import warnings
@@ -13,7 +14,7 @@ from openmc.model.surface_composite import (
 )
 import openmc.model.surface_composite as surface_composite
 
-from parse import parse, float_, _COMPLEMENT_RE, _CELL_FILL_RE
+from .parse import parse, float_, _COMPLEMENT_RE, _CELL_FILL_RE
 
 
 def get_openmc_materials(materials):
@@ -645,3 +646,12 @@ def mcnp_to_model(filename):
         settings.source = openmc.Source(space=openmc.stats.Point((ll + ur)/2))
 
     return openmc.Model(geometry, materials, settings)
+
+
+def mcnp_to_openmc():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mcnp_filename')
+    args = parser.parse_args()
+
+    model = mcnp_to_model(args.mcnp_filename)
+    model.export_to_xml()

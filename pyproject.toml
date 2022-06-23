@@ -1,0 +1,42 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "openmc_mcnp_adapter"
+version = "0.1.0"
+description = "Tool to convert MCNP input file to OpenMC classes/XML"
+readme = "README.md"
+authors = [
+  { name = "Paul Romano", email = "paul.k.romano@gmail.com" },
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.7"
+
+dependencies = [
+  "numpy",
+]
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: End Users/Desktop",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.7",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.urls]
+Homepage = "https://github.com/openmc-dev/openmc-mcnp-adapter"
+"Bug Tracker" = "https://github.com/openmc-dev/openmc-mcnp-adapter/issues"
+Discussions = "https://openmc.discourse.org"
+
+[project.scripts]
+mcnp_to_openmc = "openmc_mcnp_adapter.openmc_conversion:mcnp_to_openmc"
