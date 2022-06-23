@@ -127,34 +127,46 @@ def parse_data(section):
     return data
 
 
-def parse(filename):
+def get_sections(filename):
     # Find beginning of cell section
     text = open(filename, 'r').read()
     m = re.search(r'^[ \t]*(\d+)[ \t]+', text, flags=re.MULTILINE)
     text = text[m.start():]
+    return re.split('\n[ \t]*\n', text)
 
-    sections = re.split('\n[ \t]*\n', text)
-    for i in range(len(sections)):
-        # Remove end-of-line comments
-        sections[i] = re.sub('\$.*$', '', sections[i], flags=re.MULTILINE)
 
-        # Remove comment cards
-        sections[i] = re.sub('^[ \t]*?[cC].*?$\n?', '', sections[i], flags=re.MULTILINE)
+def sanitize(section):
+    # Remove end-of-line comments
+    section = re.sub('\$.*$', '', section, flags=re.MULTILINE)
 
-        # Turn continuation lines into single line
-        sections[i] = re.sub('&.*\n', ' ', sections[i])
-        sections[i] = re.sub('\n {5}', ' ', sections[i])
+    # Remove comment cards
+    section = re.sub('^[ \t]*?[cC].*?$\n?', '', section, flags=re.MULTILINE)
 
-        # Expand repeated numbers
-        m = _REPEAT_RE.search(sections[i])
-        while m is not None:
-            sections[i] = _REPEAT_RE.sub(' '.join((int(m.group(2)) + 1)*[m.group(1)]),
-                                         sections[i], 1)
-            m = _REPEAT_RE.search(sections[i])
+    # Turn continuation lines into single line
+    section = re.sub('&.*\n', ' ', section)
+    section = re.sub('\n {5}', ' ', section)
 
-    cells = list(map(parse_cell, sections[0].strip().split('\n')))
-    surfaces = list(map(parse_surface, sections[1].strip().split('\n')))
-    data = parse_data(sections[2])
+    # Expand repeated numbers
+    m = _REPEAT_RE.search(section)
+    while m is not None:
+        section = _REPEAT_RE.sub(' '.join((int(m.group(2)) + 1)*[m.group(1)]),
+                                 section, 1)
+        m = _REPEAT_RE.search(section)
+    return section
+
+
+def parse(filename):
+    # Split file into main three sections (cells, surfaces, data)
+    sections = get_sections(filename)
+
+    # Sanitize lines (remove comments, continuation lines, etc.)
+    cell_section = sanitize(sections[0])
+    surface_section = sanitize(sections[1])
+    data_section = sanitize(sections[2])
+
+    cells = [parse_cell(x) for x in cell_section.strip().split('\n')]
+    surfaces = [parse_surface(x) for x in surface_section.strip().split('\n')]
+    data = parse_data(data_section)
 
     return cells, surfaces, data
 

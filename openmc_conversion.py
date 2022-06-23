@@ -13,6 +13,8 @@ from openmc.model.surface_composite import (
 )
 import openmc.model.surface_composite as surface_composite
 
+from parse import parse, float_, _COMPLEMENT_RE, _CELL_FILL_RE
+
 
 def get_openmc_materials(materials):
     openmc_materials = {}
@@ -614,3 +616,32 @@ def get_openmc_universes(cells, surfaces, materials, data):
     for cell in openmc_cells.values():
         replace_complement(cell.region, openmc_cells)
     return universes
+
+
+def mcnp_to_model(filename):
+    cells, surfaces, data = parse(filename)
+
+    openmc_materials = get_openmc_materials(data['materials'])
+    openmc_surfaces = get_openmc_surfaces(surfaces, data)
+    openmc_universes = get_openmc_universes(cells, openmc_surfaces,
+                                            openmc_materials, data)
+
+    geometry = openmc.Geometry(openmc_universes[0])
+    materials = openmc.Materials(geometry.get_all_materials().values())
+
+    settings = openmc.Settings()
+    settings.batches = 40
+    settings.inactive = 20
+    settings.particles = 100
+    settings.output = {'summary': True}
+
+    # Determine bounding box for geometry
+    all_volume = openmc.Union([cell.region for cell in
+                                geometry.root_universe.cells.values()])
+    ll, ur = all_volume.bounding_box
+    if np.any(np.isinf(ll)) or np.any(np.isinf(ur)):
+        settings.source = openmc.Source(space=openmc.stats.Point())
+    else:
+        settings.source = openmc.Source(space=openmc.stats.Point((ll + ur)/2))
+
+    return openmc.Model(geometry, materials, settings)

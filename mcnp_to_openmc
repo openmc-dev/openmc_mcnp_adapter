@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+
+import argparse
+
+from openmc_conversion import mcnp_to_model
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('mcnp_filename')
+args = parser.parse_args()
+
+model = mcnp_to_model(args.mcnp_filename)
+model.export_to_xml()
