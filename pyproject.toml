@@ -34,9 +34,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/openmc-dev/openmc-mcnp-adapter"
-"Bug Tracker" = "https://github.com/openmc-dev/openmc-mcnp-adapter/issues"
+"Bug Tracker" = "https://github.com/openmc-dev/openmc_mcnp_adapter/issues"
 Discussions = "https://openmc.discourse.org"
+"Source Code" = "https://github.com/openmc-dev/openmc_mcnp_adapter"
 
 [project.scripts]
 mcnp_to_openmc = "openmc_mcnp_adapter.openmc_conversion:mcnp_to_openmc"
