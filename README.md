@@ -19,8 +19,13 @@ There has been no methodical V&V this converter, so use at your own risk!
 ## Known Limitations
 
 The converter currently only handles geometry and material information; source
-definition (SDEF) and tally specifications are ignored. Some geometry features
-are also not currently supported:
+definition (SDEF) and tally specifications are ignored.
+
+The converter will try to set surface boundary conditions to match the MCNP
+model, but in many cases it doesn't work cleanly. For these cases, you will need
+to manually set boundary conditions on the outermost surfaces.
+
+Some geometry features are not currently supported:
 
 - `LIKE n BUT` form for cell cards
 - Periodic boundary conditions
