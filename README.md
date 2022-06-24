@@ -14,7 +14,7 @@ script available. To convert an MCNP model, run:
 
 ## Disclaimer
 
-There has been no methodical V&V this converter, so use at your own risk!
+There has been no methodical V&V on this converter; use at your own risk!
 
 ## Known Limitations
 
