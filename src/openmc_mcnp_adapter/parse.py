@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 from collections import defaultdict
+from copy import deepcopy
 from math import pi
 import re
 
@@ -41,16 +42,24 @@ def parse_cell(line):
         Dictionary with cell information
 
     """
+    # Helper function for population parameters dictionary
+    def get_parameters(s, params):
+        # TODO: Use _CELL_KEYWORDS_RE?
+        words = (s + ' after').split('=')
+        for before, after in zip(words[:-1], words[1:]):
+            key = before.split()[-1]
+            value = ' '.join(after.split()[:-1])
+            params[key] = value
+
     if 'like' in line.lower():
-        # TODO: Move to OpenMC conversion
-        raise NotImplementedError('like N but form not supported')
         # Handle LIKE n BUT form
         m = _CELL2_RE.match(line.lower())
         if m is not None:
             g = m.groups()
-            parameters = (dict(kv.split('=') for kv in g[-1].split())
-                          if len(g) == 3 else {})
-            return {'id': g[0], 'like': g[1], 'parameters': parameters}
+            parameters = {}
+            if len(g) == 3:
+                get_parameters(g[-1], parameters)
+            return {'id': int(g[0]), 'like': int(g[1]), 'parameters': parameters}
 
     else:
         # Handle normal form
@@ -66,13 +75,41 @@ def parse_cell(line):
                 region = ' '.join(words[1:])
             parameters = {}
             if g[-1]:
-                words = (g[-1] + ' after').split('=')
-                for before, after in zip(words[:-1], words[1:]):
-                    key = before.split()[-1]
-                    value = ' '.join(after.split()[:-1])
-                    parameters[key] = value
+                get_parameters(g[-1], parameters)
             return {'id': int(g[0]), 'material': int(g[1]), 'density': density,
                     'region': region, 'parameters': parameters}
+
+
+def resolve_likenbut(cells):
+    """Resolve LIKE n BUT by copying attributes from like cell
+
+    Parameters
+    ----------
+    cells : list of dict
+        Cell information for each cell
+
+    """
+    # Create dictionary mapping ID to cell dict
+    cell_by_id = {c['id']: c for c in cells}
+    for cell in cells:
+        if 'like' in cell:
+            cell_id = cell['id']
+            like_cell_id = cell['like']
+            params = cell['parameters']
+
+            # Clear dictionary and copy information from like cell
+            cell.clear()
+            cell.update(deepcopy(cell_by_id[like_cell_id]))
+
+            # Update ID and specified parameters
+            cell['id'] = cell_id
+            for key, value in params.items():
+                if key == 'mat':
+                    cell['material'] = int(value)
+                elif key == 'rho':
+                    cell['density'] = float_(value)
+                else:
+                    cell['parameters'][key] = value
 
 
 def parse_surface(line):
@@ -260,5 +297,8 @@ def parse(filename):
     cells = [parse_cell(x) for x in cell_section.strip().split('\n')]
     surfaces = [parse_surface(x) for x in surface_section.strip().split('\n')]
     data = parse_data(data_section)
+
+    # Replace LIKE n BUT with actual parameters
+    resolve_likenbut(cells)
 
     return cells, surfaces, data

@@ -27,7 +27,6 @@ to manually set boundary conditions on the outermost surfaces.
 
 Some geometry features are not currently supported:
 
-- `LIKE n BUT` form for cell cards
 - Periodic boundary conditions
 - `X`, `Y`, and `Z` surfaces with 1 or 3 coordinate pairs
 - `RHP`, `REC`, `TRC`, `ELL`, `WED`, and `ARB` macrobodies
