@@ -154,27 +154,30 @@ def parse_surface(line):
 
     """
     m = _SURFACE_RE.match(line)
-    if m is not None:
-        g = m.groups()
-        surface = {}
-        if '*' in g[0]:
-            surface['reflective'] = True
-            uid = int(g[0][1:])
-        else:
-            surface['reflective'] = False
-            uid = int(g[0])
-        surface.update({'id': uid, 'mnemonic': g[2].lower(),
-                        'coefficients': g[3].strip()})
-        if g[1] is not None:
-            if int(g[1]) < 0:
-                surface['periodic'] = int(g[1])
-                # TODO: Move into OpenMC conversion
-                raise NotImplementedError('Periodic boundary conditions not supported')
-            else:
-                surface['tr'] = int(g[1])
-        return surface
+    if m is None:
+        raise ValueError("Unable to convert surface card: {}".format(line))
+
+    g = m.groups()
+    surface = {}
+    if '*' in g[0]:
+        surface['reflective'] = True
+        uid = int(g[0][1:])
     else:
-        raise NotImplementedError("Unable to convert surface card: {}".format(line))
+        surface['reflective'] = False
+        uid = int(g[0])
+    surface.update({
+        'id': uid,
+        'mnemonic': g[2].lower(),
+        'coefficients': [float_(x) for x in g[3].split()]
+    })
+    if g[1] is not None:
+        if int(g[1]) < 0:
+            surface['periodic'] = int(g[1])
+            # TODO: Move into OpenMC conversion
+            raise NotImplementedError('Periodic boundary conditions not supported')
+        else:
+            surface['tr'] = int(g[1])
+    return surface
 
 
 def parse_data(section):

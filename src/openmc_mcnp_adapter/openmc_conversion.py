@@ -16,7 +16,7 @@ from openmc.model.surface_composite import (
 )
 from openmc.model import surface_composite
 
-from .parse import parse, float_, _COMPLEMENT_RE, _CELL_FILL_RE
+from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 
 
 def get_openmc_materials(materials):
@@ -88,12 +88,12 @@ def get_openmc_surfaces(surfaces, data):
 
     openmc_surfaces = {}
     for s in surfaces:
+        coeffs = s['coefficients']
         if s['mnemonic'] == 'p':
-            coeffs = s['coefficients'].split()
             if len(coeffs) == 9:
-                p1 = [float_(x) for x in coeffs[:3]]
-                p2 = [float_(x) for x in coeffs[3:6]]
-                p3 = [float_(x) for x in coeffs[6:]]
+                p1 = coeffs[:3]
+                p2 = coeffs[3:6]
+                p3 = coeffs[6:]
                 surf = openmc.Plane.from_points(p1, p2, p3, surface_id=s['id'])
 
                 # Helper function to flip signs on plane coefficients
@@ -115,52 +115,44 @@ def get_openmc_surfaces(surfaces, data):
                 else:
                     raise ValueError("Plane appears to be a line?")
             else:
-                A, B, C, D = map(float_, coeffs)
+                A, B, C, D = coeffs
                 surf = openmc.Plane(surface_id=s['id'], a=A, b=B, c=C, d=D)
         elif s['mnemonic'] == 'px':
-            x0 = float_(s['coefficients'])
-            surf = openmc.XPlane(surface_id=s['id'], x0=x0)
+            surf = openmc.XPlane(surface_id=s['id'], x0=coeffs[0])
         elif s['mnemonic'] == 'py':
-            y0 = float_(s['coefficients'])
-            surf = openmc.YPlane(surface_id=s['id'], y0=y0)
+            surf = openmc.YPlane(surface_id=s['id'], y0=coeffs[0])
         elif s['mnemonic'] == 'pz':
-            z0 = float_(s['coefficients'])
-            surf = openmc.ZPlane(surface_id=s['id'], z0=z0)
+            surf = openmc.ZPlane(surface_id=s['id'], z0=coeffs[0])
         elif s['mnemonic'] == 'so':
-            R = float_(s['coefficients'])
-            surf = openmc.Sphere(surface_id=s['id'], r=R)
+            surf = openmc.Sphere(surface_id=s['id'], r=coeffs[0])
         elif s['mnemonic'] == 's':
-            x0, y0, z0, R = map(float_, s['coefficients'].split())
+            x0, y0, z0, R = coeffs
             surf = openmc.Sphere(surface_id=s['id'], x0=x0, y0=y0, z0=z0, r=R)
         elif s['mnemonic'] == 'sx':
-            x0, R = map(float_, s['coefficients'].split())
+            x0, R = coeffs
             surf = openmc.Sphere(surface_id=s['id'], x0=x0, r=R)
         elif s['mnemonic'] == 'sy':
-            y0, R = map(float_, s['coefficients'].split())
+            y0, R = coeffs
             surf = openmc.Sphere(surface_id=s['id'], y0=y0, r=R)
         elif s['mnemonic'] == 'sz':
-            z0, R = map(float_, s['coefficients'].split())
+            z0, R = coeffs
             surf = openmc.Sphere(surface_id=s['id'], z0=z0, r=R)
         elif s['mnemonic'] == 'c/x':
-            y0, z0, R = map(float_, s['coefficients'].split())
+            y0, z0, R = coeffs
             surf = openmc.XCylinder(surface_id=s['id'], y0=y0, z0=z0, r=R)
         elif s['mnemonic'] == 'c/y':
-            x0, z0, R = map(float_, s['coefficients'].split())
+            x0, z0, R = coeffs
             surf = openmc.YCylinder(surface_id=s['id'], x0=x0, z0=z0, r=R)
         elif s['mnemonic'] == 'c/z':
-            x0, y0, R = map(float_, s['coefficients'].split())
+            x0, y0, R = coeffs
             surf = openmc.ZCylinder(surface_id=s['id'], x0=x0, y0=y0, r=R)
         elif s['mnemonic'] == 'cx':
-            R = float_(s['coefficients'])
-            surf = openmc.XCylinder(surface_id=s['id'], r=R)
+            surf = openmc.XCylinder(surface_id=s['id'], r=coeffs[0])
         elif s['mnemonic'] == 'cy':
-            R = float_(s['coefficients'])
-            surf = openmc.YCylinder(surface_id=s['id'], r=R)
+            surf = openmc.YCylinder(surface_id=s['id'], r=coeffs[0])
         elif s['mnemonic'] == 'cz':
-            R = float_(s['coefficients'])
-            surf = openmc.ZCylinder(surface_id=s['id'], r=R)
+            surf = openmc.ZCylinder(surface_id=s['id'], r=coeffs[0])
         elif s['mnemonic'] in ('k/x', 'k/y', 'k/z'):
-            coeffs = [float_(x) for x in s['coefficients'].split()]
             x0, y0, z0, R2 = coeffs[:4]
             if len(coeffs) > 4:
                 up = (coeffs[4] == 1)
@@ -178,7 +170,6 @@ def get_openmc_surfaces(surfaces, data):
                 elif s['mnemonic'] == 'k/z':
                     surf = openmc.ZCone(surface_id=s['id'], x0=x0, y0=y0, z0=z0, r2=R2)
         elif s['mnemonic'] in ('kx', 'ky', 'kz'):
-            coeffs = [float_(x) for x in s['coefficients'].split()]
             x, R2 = coeffs[:2]
             if len(coeffs) > 2:
                 up = (coeffs[2] == 1)
@@ -196,20 +187,19 @@ def get_openmc_surfaces(surfaces, data):
                 elif s['mnemonic'] == 'kz':
                     surf = openmc.ZCone(surface_id=s['id'], z0=x, r2=R2)
         elif s['mnemonic'] == 'gq':
-            a, b, c, d, e, f, g, h, j, k = map(float_, s['coefficients'].split())
+            a, b, c, d, e, f, g, h, j, k = coeffs
             surf = openmc.Quadric(surface_id=s['id'], a=a, b=b, c=c, d=d, e=e,
                                   f=f, g=g, h=h, j=j, k=k)
         elif s['mnemonic'] == 'tx':
-            x0, y0, z0, a, b, c = map(float_, s['coefficients'].split())
+            x0, y0, z0, a, b, c = coeffs
             surf = openmc.XTorus(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
         elif s['mnemonic'] == 'ty':
-            x0, y0, z0, a, b, c = map(float_, s['coefficients'].split())
+            x0, y0, z0, a, b, c = coeffs
             surf = openmc.YTorus(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
         elif s['mnemonic'] == 'tz':
-            x0, y0, z0, a, b, c = map(float_, s['coefficients'].split())
+            x0, y0, z0, a, b, c = coeffs
             surf = openmc.ZTorus(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
         elif s['mnemonic'] in ('x', 'y', 'z'):
-            coeffs = [float_(x) for x in s['coefficients'].split()]
             axis = s['mnemonic'].upper()
             cls_plane = getattr(openmc, f'{axis}Plane')
             cls_cylinder = getattr(openmc, f'{axis}Cylinder')
@@ -234,7 +224,7 @@ def get_openmc_surfaces(surfaces, data):
             else:
                 raise NotImplementedError(f"{s['mnemonic']} surface with {len(coeffs)} parameters")
         elif s['mnemonic'] == 'rcc':
-            vx, vy, vz, hx, hy, hz, r = map(float_, s['coefficients'].split())
+            vx, vy, vz, hx, hy, hz, r = coeffs
             if hx == 0.0 and hy == 0.0:
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
             elif hy == 0.0 and hz == 0.0:
@@ -245,10 +235,8 @@ def get_openmc_surfaces(surfaces, data):
                 raise NotImplementedError('RCC macrobody with non-axis-aligned'
                                           'height vector not supported.')
         elif s['mnemonic'] == 'rpp':
-            xmin, xmax, ymin, ymax, zmin, zmax = map(float_, s['coefficients'].split())
-            surf = RPP(xmin, xmax, ymin, ymax, zmin, zmax)
+            surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
-            coeffs = list(map(float_, s['coefficients'].split()))
             surf = surface_composite.Box(coeffs[:3], coeffs[3:6], coeffs[6:9], coeffs[9:])
         else:
             raise NotImplementedError('Surface type "{}" not supported'
