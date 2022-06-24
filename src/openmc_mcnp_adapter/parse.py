@@ -8,11 +8,24 @@ import re
 
 import numpy as np
 
+# Regular expressions for cell parameters
+_KEYWORDS = [
+    r'\*?trcl', r'\*?fill', 'tmp', 'u', 'lat',
+    'imp:.', 'vol', 'pwt', 'ext:.', 'fcl', 'wwn', 'dxc', 'nonu', 'pd',
+    'elpt', 'cosy', 'bflcl', 'unc',
+]
+_ANY_KEYWORD = '|'.join(f'(?:{k})' for k in _KEYWORDS)
+_CELL_PARAMETERS_RE = re.compile(rf"""
+    ((?:{_ANY_KEYWORD}))    # Keyword
+    \s*=?\s*                # = sign (optional)
+    (.*?                    # Value
+    (?={_ANY_KEYWORD}|\Z))  # Followed by another keyword or end-of-string
+""", re.VERBOSE
+)
 
-_CELL1_RE = re.compile(r'\s*(\d+)\s+(\d+)([ \t0-9:#().dDeE\+-]+)((?:\S+\s*=.*)?)')
-_CELL_KEYWORDS_RE = re.compile(r'[A-Za-z: \t]+=[-0-9:() \t]+')
+_CELL1_RE = re.compile(r'\s*(\d+)\s+(\d+)([ \t0-9:#().dDeE\+-]+)\s*(.*)')
+_CELL2_RE = re.compile(r'\s*(\d+)\s+like\s+(\d+)\s+but\s*(.*)')
 _CELL_FILL_RE = re.compile(r'\s*(\d+)\s*(?:\((.*)\))?')
-_CELL2_RE = re.compile(r'\s*(\d+)\s+like\s+(\d+)\s+but\s+(\S+\s*=.*)')
 _SURFACE_RE = re.compile(r'\s*(\*?\d+)(\s*[-0-9]+)?\s+(\S+)((?:\s+\S+)+)')
 _MATERIAL_RE = re.compile(r'\s*[Mm](\d+)((?:\s+\S+)+)')
 _TR_RE = re.compile(r'\s*(\*)?[Tt][Rr](\d+)\s+(.*)')
@@ -26,6 +39,23 @@ _NUM_RE = re.compile(r'(\d)([+-])(\d)')
 def float_(val):
     """Convert scientific notation literals that don't have an 'e' in them to float"""
     return float(_NUM_RE.sub(r'\1e\2\3', val))
+
+
+def cell_parameters(s):
+    """Return dictionary of cell parameters
+
+    Parameters
+    ----------
+    s : str
+        Portion of cell card representing parameters
+
+    Returns
+    -------
+    dict
+        Dictionary mapping keywords to values
+
+    """
+    return {key: value.strip() for key, value in _CELL_PARAMETERS_RE.findall(s)}
 
 
 def parse_cell(line):
@@ -42,42 +72,39 @@ def parse_cell(line):
         Dictionary with cell information
 
     """
-    # Helper function for population parameters dictionary
-    def get_parameters(s, params):
-        # TODO: Use _CELL_KEYWORDS_RE?
-        words = (s + ' after').split('=')
-        for before, after in zip(words[:-1], words[1:]):
-            key = before.split()[-1]
-            value = ' '.join(after.split()[:-1])
-            params[key] = value
-
     if 'like' in line.lower():
         # Handle LIKE n BUT form
         m = _CELL2_RE.match(line.lower())
-        if m is not None:
-            g = m.groups()
-            parameters = {}
-            if len(g) == 3:
-                get_parameters(g[-1], parameters)
-            return {'id': int(g[0]), 'like': int(g[1]), 'parameters': parameters}
+        if m is None:
+            raise ValueError(f"Could not parse cell card: {line}")
+        g = m.groups()
+        return {
+            'id': int(g[0]),
+            'like': int(g[1]),
+            'parameters': cell_parameters(g[2])
+        }
 
     else:
         # Handle normal form
         m = _CELL1_RE.match(line.lower())
-        if m is not None:
-            g = m.groups()
-            if g[1] == '0':
-                density = None
-                region = g[2].strip()
-            else:
-                words = g[2].split()
-                density = float_(words[0])
-                region = ' '.join(words[1:])
-            parameters = {}
-            if g[-1]:
-                get_parameters(g[-1], parameters)
-            return {'id': int(g[0]), 'material': int(g[1]), 'density': density,
-                    'region': region, 'parameters': parameters}
+        if m is None:
+            raise ValueError(f"Could not parse cell card: {line}")
+
+        g = m.groups()
+        if g[1] == '0':
+            density = None
+            region = g[2].strip()
+        else:
+            words = g[2].split()
+            density = float_(words[0])
+            region = ' '.join(words[1:])
+        return {
+            'id': int(g[0]),
+            'material': int(g[1]),
+            'density': density,
+            'region': region,
+            'parameters': cell_parameters(g[3])
+        }
 
 
 def resolve_likenbut(cells):

@@ -33,3 +33,4 @@ Some geometry features are not currently supported:
 - Hexagonal lattices
 - One-dimensional lattices
 - Two-dimensional lattices with basis other than x-y
+- `U`, `LAT`, and `FILL` cards specified in the data card block
