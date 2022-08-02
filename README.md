@@ -30,6 +30,7 @@ Some geometry features are not currently supported:
 - Periodic boundary conditions
 - `X`, `Y`, and `Z` surfaces with 1 or 3 coordinate pairs
 - `RHP`, `REC`, `TRC`, `ELL`, `WED`, and `ARB` macrobodies
+- Macrobody facets
 - Hexagonal lattices
 - One-dimensional lattices
 - Two-dimensional lattices with basis other than x-y

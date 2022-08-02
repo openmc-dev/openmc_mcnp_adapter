@@ -104,16 +104,20 @@ def get_openmc_surfaces(surfaces, data):
                     surf.d = -surf.d
 
                 # Enforce MCNP sense requirements
-                if surf.d != 0.0 and surf.d > 0.0:
-                    flip_sense(surf)
-                elif surf.c != 0.0 and surf.c < 0.0:
-                    flip_sense(surf)
-                elif surf.b != 0.0 and surf.b < 0.0:
-                    flip_sense(surf)
-                elif surf.a != 0.0 and surf.a < 0.0:
-                    flip_sense(surf)
+                if surf.d != 0.0:
+                    if surf.d < 0.0:
+                        flip_sense(surf)
+                elif surf.c != 0.0:
+                    if surf.c < 0.0:
+                        flip_sense(surf)
+                elif surf.b != 0.0:
+                    if surf.b < 0.0:
+                        flip_sense(surf)
+                elif surf.a != 0.0:
+                    if surf.a < 0.0:
+                        flip_sense(surf)
                 else:
-                    raise ValueError("Plane appears to be a line?")
+                    raise ValueError(f"Plane {s['id']} appears to be a line? ({coeffs})")
             else:
                 A, B, C, D = coeffs
                 surf = openmc.Plane(surface_id=s['id'], a=A, b=B, c=C, d=D)
@@ -237,6 +241,10 @@ def get_openmc_surfaces(surfaces, data):
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
+            if len(coeffs) == 9:
+                raise NotImplementedError('BOX macrobody with one infinite dimension not supported')
+            elif len(coeffs) != 12:
+                raise NotImplementedError('BOX macrobody should have 12 coefficients')
             surf = surface_composite.Box(coeffs[:3], coeffs[3:6], coeffs[6:9], coeffs[9:])
         else:
             raise NotImplementedError('Surface type "{}" not supported'
