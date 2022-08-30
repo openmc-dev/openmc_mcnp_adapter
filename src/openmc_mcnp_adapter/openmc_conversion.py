@@ -258,9 +258,9 @@ def get_openmc_surfaces(surfaces, data):
             displacement, rotation = data['tr'][tr_num]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", openmc.IDWarning)
-                surf = surf.translate(displacement, inplace=True)
                 if rotation is not None:
                     surf = surf.rotate(rotation, inplace=True)
+                surf = surf.translate(displacement, inplace=True) 
 
         openmc_surfaces[s['id']] = surf
 
