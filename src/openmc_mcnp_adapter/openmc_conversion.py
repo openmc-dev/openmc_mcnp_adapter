@@ -705,10 +705,13 @@ def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
     all_volume = openmc.Union([cell.region for cell in
                                 geometry.root_universe.cells.values()])
     ll, ur = all_volume.bounding_box
+    src_class = getattr(openmc, 'IndependentSource')
+    if src_class is None:
+        src_class = openmc.Source
     if np.any(np.isinf(ll)) or np.any(np.isinf(ur)):
-        settings.source = openmc.Source(space=openmc.stats.Point())
+        settings.source = src_class(space=openmc.stats.Point())
     else:
-        settings.source = openmc.Source(space=openmc.stats.Point((ll + ur)/2))
+        settings.source = src_class(space=openmc.stats.Point((ll + ur)/2))
 
     return openmc.Model(geometry, materials, settings)
 
