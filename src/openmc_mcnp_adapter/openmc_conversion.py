@@ -646,6 +646,9 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         elif c['material'] > 0:
             cell.fill = mat
+        
+        if 'vol' in c["parameters"]:
+            cell.volume = float(c["parameters"]["vol"])
 
         if not hasattr(cell, '_lattice'):
             openmc_cells[c['id']] = cell
