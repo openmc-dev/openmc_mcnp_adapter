@@ -362,7 +362,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 if use_degrees:
                     rotation_matrix = np.cos(rotation_matrix * pi/180.0)
                 print(rotation_matrix)
-                c['_region'] = c['_region'].rotate(rotation_matrix, pivot=vector)
+                c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
 
             # Update surfaces dictionary with new surfaces
             for surf_id, surf in c['_region'].get_surfaces().items():
