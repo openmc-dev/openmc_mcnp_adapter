@@ -5,7 +5,7 @@ import argparse
 from math import pi
 import re
 import warnings
-
+import itertools
 import numpy as np
 import openmc
 from openmc.data import get_thermal_name
@@ -18,51 +18,100 @@ from openmc.model import surface_composite
 
 from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 
+def rotate_vector(v1, v2):
+    """
+    https://gist.github.com/aormorningstar/3e5dda91f155d7919ef6256cb057ceee
+    Compute a matrix R that rotates v1 to align with v2.
+    v1 and v2 must be length-3 1d numpy arrays.
+    """
+    # unit vectors
+    u = v1 / np.linalg.norm(v1)
+    Ru = v2 / np.linalg.norm(v2)
+    # dimension of the space and identity
+    dim = u.size
+    I = np.identity(dim)
+    # the cos angle between the vectors
+    c = np.dot(u, Ru)
+    # a small number
+    eps = 1.0e-10
+    if np.abs(c - 1.0) < eps:
+        # same direction
+        return I
+    elif np.abs(c + 1.0) < eps:
+        # opposite direction
+        return -I
+    else:
+        # the cross product matrix of a vector to rotate around
+        K = np.outer(Ru, u) - np.outer(u, Ru)
+        # Rodrigues' formula
+        return I + K + (K @ K) / (1 + c)
 
-def get_openmc_materials(materials):
+def get_openmc_materials(materials, cells):
     """Get OpenMC materials from MCNP materials
 
     Parameters
     ----------
     materials : list
         List of MCNP material information
-
+    cells : list
+        List of MCNP cells
     Returns
     -------
     dict
         Dictionary mapping material ID to :class:`openmc.Material`
 
     """
+    materials_densities = list(itertools.groupby(sorted(cells, key=lambda cell: cell['material']), lambda c: (c['material'], c['density'])))
+    materials_densities = sorted(list(set([md[0] for md in materials_densities])), key=lambda x: x[0])
+    openmc.Material.next_id = max([mat_id for mat_id, _ in materials_densities]) + 1
+
+
     openmc_materials = {}
-    for m in materials.values():
+    for mcnp_mat_id, density in materials_densities:
+        if mcnp_mat_id == 0:
+            continue
+        m = materials[mcnp_mat_id]
         if 'id' not in m:
             continue
-        material = openmc.Material(m['id'])
-        for nuclide, percent in m['nuclides']:
-            if '.' in nuclide:
-                zaid, xs = nuclide.split('.')
-            else:
-                zaid = nuclide
-            name, element, Z, A, metastable = get_metadata(int(zaid), 'mcnp')
-            if percent < 0:
-                if A > 0:
-                    material.add_nuclide(name, abs(percent), 'wo')
+        if mcnp_mat_id in openmc_materials.keys():
+            material = openmc_materials[mcnp_mat_id][list(openmc_materials[mcnp_mat_id].keys())[0]].clone()
+            material.name = f'M{mcnp_mat_id} with density {density}'
+        else:
+            material = openmc.Material(m['id'])
+            material.name = f'M{mcnp_mat_id} with density {density}'
+            for nuclide, percent in m['nuclides']:
+                if '.' in nuclide:
+                    zaid, xs = nuclide.split('.')
                 else:
-                    material.add_element(element, abs(percent), 'wo')
-            else:
-                if A > 0:
-                    material.add_nuclide(name, percent, 'ao')
+                    zaid = nuclide
+                name, element, Z, A, metastable = get_metadata(int(zaid), 'mcnp')
+                if percent < 0:
+                    if A > 0:
+                        material.add_nuclide(name, abs(percent), 'wo')
+                    else:
+                        material.add_element(element, abs(percent), 'wo')
                 else:
-                    material.add_element(element, percent, 'ao')
+                    if A > 0:
+                        material.add_nuclide(name, percent, 'ao')
+                    else:
+                        material.add_element(element, percent, 'ao')
 
-        if 'sab' in m:
-            for sab in m['sab']:
-                if '.' in sab:
-                    name, xs = sab.split('.')
-                else:
-                    name = sab
-                material.add_s_alpha_beta(get_thermal_name(name))
-        openmc_materials[m['id']] = material
+            if 'sab' in m:
+                for sab in m['sab']:
+                    if '.' in sab:
+                        name, xs = sab.split('.')
+                    else:
+                        name = sab
+                    material.add_s_alpha_beta(get_thermal_name(name))
+        if density > 0:
+            material.set_density('atom/b-cm', density)
+        else:
+            material.set_density('g/cm3', abs(density))
+        if mcnp_mat_id not in openmc_materials.keys():
+            openmc_materials[mcnp_mat_id]= {f'{density}': material}
+        else:
+            openmc_materials[mcnp_mat_id][f'{density}'] = material            
+        
 
     return openmc_materials
 
@@ -236,8 +285,11 @@ def get_openmc_surfaces(surfaces, data):
             elif hx == 0.0 and hz == 0.0:
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
             else:
-                raise NotImplementedError('RCC macrobody with non-axis-aligned'
-                                          'height vector not supported.')
+                d = np.sqrt(hx**2 + hy**2 + hz**2)
+                vz0 = np.array([0, 0, 1])
+                v = np.array([hx, hy, hz])
+                rotation_matrix = rotate_vector(vz0, v)
+                surf = RCC((vx, vy, vz), d, r, axis='z').rotate(rotation_matrix, pivot=(vx, vy, vz))
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
@@ -449,22 +501,8 @@ def get_openmc_universes(cells, surfaces, materials, data):
         # Determine material fill if present -- this is not assigned until later
         # in case it's used in a lattice (need to create an extra universe then)
         if c['material'] > 0:
-            mat = materials[c['material']]
-            if mat.density is None:
-                if c['density'] > 0:
-                    mat.set_density('atom/b-cm', c['density'])
-                else:
-                    mat.set_density('g/cm3', abs(c['density']))
-            else:
-                if mat.density != abs(c['density']):
-                    print("WARNING: Cell {} has same material but with a "
-                          "different density than that of another.".format(c['id']))
-                    mat = mat.clone()
-                    if c['density'] > 0:
-                        mat.set_density('atom/b-cm', c['density'])
-                    else:
-                        mat.set_density('g/cm3', abs(c['density']))
-
+            mat = materials[c['material']][f'{c["density"]}']
+        
         # Create lattices
         if 'fill' in c['parameters'] or '*fill' in c['parameters']:
             if 'lat' in c['parameters']:
@@ -683,8 +721,7 @@ def mcnp_to_model(filename):
     """
 
     cells, surfaces, data = parse(filename)
-
-    openmc_materials = get_openmc_materials(data['materials'])
+    openmc_materials = get_openmc_materials(data['materials'], cells)
     openmc_surfaces = get_openmc_surfaces(surfaces, data)
     openmc_universes = get_openmc_universes(cells, openmc_surfaces,
                                             openmc_materials, data)
