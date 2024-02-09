@@ -58,7 +58,7 @@ def get_openmc_materials(materials, cells):
     Returns
     -------
     dict
-        Dictionary mapping material ID to :class:`openmc.Material`
+        Dictionary mapping MCNP material ID to dictionary using MCNP density as key and the corresponding :class:`openmc.Material` object as value.
 
     """
     materials_densities = list(itertools.groupby(sorted(cells, key=lambda cell: cell['material']), lambda c: (c['material'], c['density'])))
