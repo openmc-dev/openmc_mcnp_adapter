@@ -260,7 +260,7 @@ def get_openmc_surfaces(surfaces, data):
                 warnings.simplefilter("ignore", openmc.IDWarning)
                 surf = surf.translate(displacement, inplace=True)
                 if rotation is not None:
-                    surf = surf.rotate(rotation, pivot=displacement, inplace=True) 
+                    surf = surf.rotate(rotation, pivot=displacement, inplace=True)
 
         openmc_surfaces[s['id']] = surf
 
@@ -347,14 +347,18 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 else:
                     c['parameters']['fill'] = f'{fill} {trcl}'
 
+            # check for a TRn card
             if not trcl.startswith('('):
-                raise NotImplementedError(
-                    'TRn card not supported (cell {}).'.format(c['id']))
+                displacement, rotation = data['tr'][int(trcl)]
+                if rotation is not None:
+                    raise NotImplementedError(
+                        'TRn card with rotations is not supported (cell {}).'.format(c['id']))
+                vector = displacement
+            else:
+                # Drop parentheses
+                trcl = trcl[1:-1].split()
+                vector = tuple(float(c) for c in trcl[:3])
 
-            # Drop parentheses
-            trcl = trcl[1:-1].split()
-
-            vector = tuple(float(c) for c in trcl[:3])
             c['_region'] = c['_region'].translate(vector, translate_memo)
 
             if len(trcl) > 3:
@@ -646,7 +650,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         elif c['material'] > 0:
             cell.fill = mat
-        
+
         if 'vol' in c["parameters"]:
             cell.volume = float(c["parameters"]["vol"])
 
