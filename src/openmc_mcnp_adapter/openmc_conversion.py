@@ -190,6 +190,15 @@ def get_openmc_surfaces(surfaces, data):
                     surf = openmc.YCone(surface_id=s['id'], y0=x, r2=R2)
                 elif s['mnemonic'] == 'kz':
                     surf = openmc.ZCone(surface_id=s['id'], z0=x, r2=R2)
+        elif s['mnemonic'] == 'sq':
+            a, b, c, D, E, F, G, x, y, z = coeffs
+            d = e = f = 0.0
+            g = 2*(D - a*x)
+            h = 2*(E - b*y)
+            j = 2*(F - c*z)
+            k = a*x*x + b*y*y + c*z*z + 2*(D*x + E*y + F*z) + G
+            surf = openmc.Quadric(surface_id=s['id'], a=a, b=b, c=c, d=d, e=e,
+                                  f=f, g=g, h=h, j=j, k=k)
         elif s['mnemonic'] == 'gq':
             a, b, c, d, e, f, g, h, j, k = coeffs
             surf = openmc.Quadric(surface_id=s['id'], a=a, b=b, c=c, d=d, e=e,
@@ -646,7 +655,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         elif c['material'] > 0:
             cell.fill = mat
-        
+
         if 'vol' in c["parameters"]:
             cell.volume = float(c["parameters"]["vol"])
 
