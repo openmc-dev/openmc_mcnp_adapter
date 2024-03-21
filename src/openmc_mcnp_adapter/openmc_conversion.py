@@ -260,7 +260,7 @@ def get_openmc_surfaces(surfaces, data):
                 warnings.simplefilter("ignore", openmc.IDWarning)
                 surf = surf.translate(displacement, inplace=True)
                 if rotation is not None:
-                    surf = surf.rotate(rotation, pivot=displacement, inplace=True) 
+                    surf = surf.rotate(rotation, pivot=displacement, inplace=True)
 
         openmc_surfaces[s['id']] = surf
 
@@ -667,13 +667,15 @@ def get_openmc_universes(cells, surfaces, materials, data):
     return universes
 
 
-def mcnp_to_model(filename):
+def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
     """Convert MCNP input to OpenMC model
 
     Parameters
     ----------
     filename : str
         Path to MCNP file
+    merge_surfaces : bool
+        Whether to remove redundant surfaces when the geometry is exported.
 
     Returns
     -------
@@ -690,6 +692,7 @@ def mcnp_to_model(filename):
                                             openmc_materials, data)
 
     geometry = openmc.Geometry(openmc_universes[0])
+    geometry.merge_surfaces = merge_surfaces
     materials = openmc.Materials(geometry.get_all_materials().values())
 
     settings = openmc.Settings()
@@ -702,10 +705,13 @@ def mcnp_to_model(filename):
     all_volume = openmc.Union([cell.region for cell in
                                 geometry.root_universe.cells.values()])
     ll, ur = all_volume.bounding_box
+    src_class = getattr(openmc, 'IndependentSource')
+    if src_class is None:
+        src_class = openmc.Source
     if np.any(np.isinf(ll)) or np.any(np.isinf(ur)):
-        settings.source = openmc.Source(space=openmc.stats.Point())
+        settings.source = src_class(space=openmc.stats.Point())
     else:
-        settings.source = openmc.Source(space=openmc.stats.Point((ll + ur)/2))
+        settings.source = src_class(space=openmc.stats.Point((ll + ur)/2))
 
     return openmc.Model(geometry, materials, settings)
 
@@ -714,7 +720,12 @@ def mcnp_to_openmc():
     """Command-line interface for converting MCNP model"""
     parser = argparse.ArgumentParser()
     parser.add_argument('mcnp_filename')
+    parser.add_argument('--merge-surfaces', action='store_true',
+                        help='Remove redundant surfaces when exporting XML')
+    parser.add_argument('--no-merge-surfaces', dest='download', action='store_false',
+                        help='Do not remove redundant surfaces when exporting XML')
+    parser.set_defaults(merge_surfaces=True)
     args = parser.parse_args()
 
-    model = mcnp_to_model(args.mcnp_filename)
+    model = mcnp_to_model(args.mcnp_filename, args.merge_surfaces)
     model.export_to_xml()
