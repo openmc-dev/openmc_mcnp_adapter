@@ -347,24 +347,26 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 else:
                     c['parameters']['fill'] = f'{fill} {trcl}'
 
+            # Apply transformation to region
+            vector = None
+            rotation_matrix = None
+
             # check for a TRn card
             if not trcl.startswith('('):
                 vector, rotation = data['tr'][int(trcl)]
-                if rotation is not None:
-                    raise NotImplementedError(
-                        'TRn card with rotations is not supported (cell {}).'.format(c['id']))
             else:
                 # Drop parentheses
                 trcl = trcl[1:-1].split()
                 vector = tuple(float(c) for c in trcl[:3])
+                if len(trcl) > 3:
+                    rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
+                    if use_degrees:
+                        rotation_matrix = np.cos(rotation_matrix * pi/180.0)
 
-            c['_region'] = c['_region'].translate(vector, translate_memo)
+            if vector is not None:
+                c['_region'] = c['_region'].translate(vector, translate_memo)
 
-            if len(trcl) > 3:
-                rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
-                if use_degrees:
-                    rotation_matrix = np.cos(rotation_matrix * pi/180.0)
-                print(rotation_matrix)
+            if rotation_matrix is not None:
                 c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
 
             # Update surfaces dictionary with new surfaces
