@@ -349,11 +349,10 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
             # check for a TRn card
             if not trcl.startswith('('):
-                displacement, rotation = data['tr'][int(trcl)]
+                vector, rotation = data['tr'][int(trcl)]
                 if rotation is not None:
                     raise NotImplementedError(
                         'TRn card with rotations is not supported (cell {}).'.format(c['id']))
-                vector = displacement
             else:
                 # Drop parentheses
                 trcl = trcl[1:-1].split()
