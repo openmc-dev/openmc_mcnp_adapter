@@ -303,11 +303,11 @@ def replace_macrobody_facets(region, surfaces):
         facet_loc = region.find('.')
         facet_num = int(region[facet_loc+1])
 
-        # walk back from the decimal until we hit a non-integer value:
-        start_idx = facet_loc - 1
+        # walk back from the decimal until we get a non-integer value:
+        start_idx = facet_loc
         while True:
             try:
-                int(region[start_idx])
+                int(region[start_idx - 1])
             except ValueError:
                 break
             start_idx -= 1
@@ -343,7 +343,7 @@ def replace_macrobody_facets(region, surfaces):
         surfaces[facet_surface.id] = facet_surface
 
         # re-build the region expression with this entry in place of the macrobody facet entry
-        region = region[:start_idx+1] + str(facet_id) + region[facet_loc+2:]
+        region = region[:start_idx] + str(facet_id) + region[facet_loc+2:]
 
     return region
 
