@@ -578,8 +578,8 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 # itself -- since OpenMC can't handle this directly, we need
                 # to create an extra cell/universe to fill in the lattice
                 if np.any(univ_ids == uid):
-                    c = openmc.Cell(fill=mat)
-                    u = openmc.Universe(cells=[c])
+                    extra_cell = openmc.Cell(fill=mat)
+                    u = openmc.Universe(cells=[extra_cell])
                     univ_ids[univ_ids == uid] = u.id
 
                     # Put it in universes dictionary so that get_universe
@@ -593,9 +593,9 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 if not np.all(center == 0.0):
                     for uid in np.unique(univ_ids):
                         # Create translated universe
-                        c = openmc.Cell(fill=get_universe(uid))
-                        c.translation = -center
-                        u = openmc.Universe(cells=[c])
+                        trans_cell = openmc.Cell(fill=get_universe(uid))
+                        trans_cell.translation = -center
+                        u = openmc.Universe(cells=[trans_cell])
                         universes[u.id] = u
 
                         # Replace original universes with translated ones
