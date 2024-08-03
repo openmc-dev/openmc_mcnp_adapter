@@ -18,33 +18,53 @@ from openmc.model import surface_composite
 
 from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 
-def rotate_vector(v1, v2):
+
+def rotation_matrix(v1, v2):
+    """Compute rotation matrix that would rotate v1 into v2.
+
+    Parameters
+    ----------
+    v1 : numpy.ndarray
+        Unrotated vector
+    v2 : numpy.ndarray
+        Rotated vector
+
+    Returns
+    -------
+    3x3 rotation matrix
+
     """
-    https://gist.github.com/aormorningstar/3e5dda91f155d7919ef6256cb057ceee
-    Compute a matrix R that rotates v1 to align with v2.
-    v1 and v2 must be length-3 1d numpy arrays.
-    """
-    # unit vectors
-    u = v1 / np.linalg.norm(v1)
-    Ru = v2 / np.linalg.norm(v2)
-    # dimension of the space and identity
-    dim = u.size
-    I = np.identity(dim)
-    # the cos angle between the vectors
-    c = np.dot(u, Ru)
-    # a small number
-    eps = 1.0e-10
-    if np.abs(c - 1.0) < eps:
-        # same direction
+    # Normalize vectors
+    u1 = v1 / np.linalg.norm(v1)
+    u2 = v2 / np.linalg.norm(v2)
+
+    # Calculate axis of rotation
+    axis = np.cross(u1, u2)
+    axis /= np.linalg.norm(axis)
+
+    I = np.identity(3)
+
+    # Handle special case where vectors are parallel or anti-parallel
+    if abs(np.dot(u2, axis) - 1.0) < 1e-8:
         return I
-    elif np.abs(c + 1.0) < eps:
-        # opposite direction
+    elif abs(np.dot(u2, axis) + 1.0) < 1e-8:
         return -I
     else:
-        # the cross product matrix of a vector to rotate around
-        K = np.outer(Ru, u) - np.outer(u, Ru)
-        # Rodrigues' formula
-        return I + K + (K @ K) / (1 + c)
+        # Calculate rotation angle
+        cos_angle = np.dot(u1, u2)
+        sin_angle = np.sqrt(1 - cos_angle*cos_angle)
+
+        # Create cross-product matrix K
+        kx, ky, kz = axis
+        K = np.array([
+            [0.0, -kz, ky],
+            [kz, 0.0, -kx],
+            [-ky, kx, 0.0]
+        ])
+
+        # Create rotation matrix using Rodrigues' rotation formula
+        return I + K * sin_angle + (K @ K) * (1 - cos_angle)
+
 
 def get_openmc_materials(materials):
     """Get OpenMC materials from MCNP materials
@@ -257,17 +277,35 @@ def get_openmc_surfaces(surfaces, data):
         elif s['mnemonic'] == 'rcc':
             vx, vy, vz, hx, hy, hz, r = coeffs
             if hx == 0.0 and hy == 0.0:
+                if hz < 0.0:
+                    vz += hz
+                    hz = -hz
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
             elif hy == 0.0 and hz == 0.0:
+                if hx < 0.0:
+                    vx += hx
+                    hx = -hx
                 surf = RCC((vx, vy, vz), hx, r, axis='x')
             elif hx == 0.0 and hz == 0.0:
+                if hy < 0.0:
+                    vy += hy
+                    hy = -hy
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
             else:
-                d = np.sqrt(hx**2 + hy**2 + hz**2)
-                vz0 = np.array([0, 0, 1])
-                v = np.array([hx, hy, hz])
-                rotation_matrix = rotate_vector(vz0, v)
-                surf = RCC((vx, vy, vz), d, r, axis='z').rotate(rotation_matrix, pivot=(vx, vy, vz))
+                # Create vectors for Z-axis and cylinder orientation
+                u = np.array([0., 0., 1.])
+                h = np.array([hx, hy, hz])
+
+                # Determine rotation matrix to transform u -> h
+                rotation = rotation_matrix(u, h)
+
+                # Create RCC aligned with Z-axis
+                height = np.linalg.norm(h)
+                surf = RCC((vx, vy, vz), height, r, axis='z')
+
+                # Rotate the RCC
+                surf = surf.rotate(rotation, pivot=(vx, vy, vz))
+
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
@@ -391,7 +429,6 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
                 if use_degrees:
                     rotation_matrix = np.cos(rotation_matrix * pi/180.0)
-                print(rotation_matrix)
                 c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
 
             # Update surfaces dictionary with new surfaces
