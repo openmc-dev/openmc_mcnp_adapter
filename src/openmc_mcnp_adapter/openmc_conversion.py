@@ -245,8 +245,41 @@ def get_openmc_surfaces(surfaces, data):
             elif hx == 0.0 and hz == 0.0:
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
             else:
-                raise NotImplementedError('RCC macrobody with non-axis-aligned'
-                                          'height vector not supported.')
+                # Create unit vectors for Z-axis and cylinder orientation
+                z_axis = np.array([0, 0, 1])
+                vector = np.array([hx, hy, hz])
+                normalized_vector = vector/np.linalg.norm(vector)
+                
+                # Calculate rotation axis
+                axis = np.cross(z_axis, normalized_vector)
+
+                # Handle special case where vectors are parallel or anti-parallel
+                if np.linalg.norm(axis) < 1e-8:
+                    rotation = np.eye(3)
+                else:
+                    # Calculate rotation angle
+                    angle = np.arccos(np.dot(z_axis, normalized_vector))
+
+                    # Create rotation matrix using Rodrigues' rotation formula
+                    axis = axis/np.linalg.norm(axis)
+                    cos_angle = np.cos(angle)
+                    sin_angle = np.sin(angle)
+                    I = np.eye(3)
+                    ax = np.array([[0, -axis[2], axis[1]],
+                                    [axis[2], 0, -axis[0]],
+                                    [-axis[1], axis[0], 0]])
+
+                    rotation = I * cos_angle + ax * sin_angle + np.outer(axis, axis) * (1 - cos_angle)
+                
+                # Calculate height of cylinder
+                height = np.sqrt(hx**2 + hy**2 + hz**2)
+
+                # Create RCC aligned with Z-axis
+                surf = RCC((vx, vy, vz), height, r, axis='z')
+
+                # Rotate the RCC
+                surf.rotate(rotation, pivot=(vx, vy, vz))
+
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
