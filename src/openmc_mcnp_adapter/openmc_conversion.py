@@ -321,15 +321,16 @@ def replace_macrobody_facets(region: str, surfaces: dict) -> str:
 
         # Get corresponding composite surface
         composite_surf = surfaces[abs(surface_id)]
-        if not isinstance(composite_surf, CompositeSurface):
-            raise TypeError(f'Macrobody facet {facet} requested for '
-                            'non-composite surface')
-
-        # Get name of attribute on composite surface and whether to flip sense
-        facet_attr, flip_sense = _MACROBODY_FACETS[type(composite_surf)][facet_num]
+        if isinstance(composite_surf, CompositeSurface):
+            # Get composite surface and whether to flip sense
+            facet_attr, flip_sense = _MACROBODY_FACETS[type(composite_surf)][facet_num]
+            facet_surface = getattr(composite_surf, facet_attr)
+        else:
+            warnings.warn(f'Macrobody facet {facet} ignored (not a macrobody)')
+            facet_surface = composite_surf
+            flip_sense = False
 
         # Get corresponding surface and its ID
-        facet_surface = getattr(composite_surf, facet_attr)
         facet_id = facet_surface.id
 
         # starting with a positive facet ID, adjust for:
