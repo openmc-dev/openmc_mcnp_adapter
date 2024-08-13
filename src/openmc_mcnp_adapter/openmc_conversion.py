@@ -40,6 +40,53 @@ _MACROBODY_FACETS = {
 }
 
 
+def rotation_matrix(v1, v2):
+    """Compute rotation matrix that would rotate v1 into v2.
+
+    Parameters
+    ----------
+    v1 : numpy.ndarray
+        Unrotated vector
+    v2 : numpy.ndarray
+        Rotated vector
+
+    Returns
+    -------
+    3x3 rotation matrix
+
+    """
+    # Normalize vectors
+    u1 = v1 / np.linalg.norm(v1)
+    u2 = v2 / np.linalg.norm(v2)
+
+    # Calculate axis of rotation
+    axis = np.cross(u1, u2)
+    axis /= np.linalg.norm(axis)
+
+    I = np.identity(3)
+
+    # Handle special case where vectors are parallel or anti-parallel
+    if abs(np.dot(u2, axis) - 1.0) < 1e-8:
+        return I
+    elif abs(np.dot(u2, axis) + 1.0) < 1e-8:
+        return -I
+    else:
+        # Calculate rotation angle
+        cos_angle = np.dot(u1, u2)
+        sin_angle = np.sqrt(1 - cos_angle*cos_angle)
+
+        # Create cross-product matrix K
+        kx, ky, kz = axis
+        K = np.array([
+            [0.0, -kz, ky],
+            [kz, 0.0, -kx],
+            [-ky, kx, 0.0]
+        ])
+
+        # Create rotation matrix using Rodrigues' rotation formula
+        return I + K * sin_angle + (K @ K) * (1 - cos_angle)
+
+
 def get_openmc_materials(materials):
     """Get OpenMC materials from MCNP materials
 
@@ -211,6 +258,15 @@ def get_openmc_surfaces(surfaces, data):
                     surf = openmc.YCone(surface_id=s['id'], y0=x, r2=R2)
                 elif s['mnemonic'] == 'kz':
                     surf = openmc.ZCone(surface_id=s['id'], z0=x, r2=R2)
+        elif s['mnemonic'] == 'sq':
+            a, b, c, D, E, F, G, x, y, z = coeffs
+            d = e = f = 0.0
+            g = 2*(D - a*x)
+            h = 2*(E - b*y)
+            j = 2*(F - c*z)
+            k = a*x*x + b*y*y + c*z*z + 2*(D*x + E*y + F*z) + G
+            surf = openmc.Quadric(surface_id=s['id'], a=a, b=b, c=c, d=d, e=e,
+                                  f=f, g=g, h=h, j=j, k=k)
         elif s['mnemonic'] == 'gq':
             a, b, c, d, e, f, g, h, j, k = coeffs
             surf = openmc.Quadric(surface_id=s['id'], a=a, b=b, c=c, d=d, e=e,
@@ -251,14 +307,35 @@ def get_openmc_surfaces(surfaces, data):
         elif s['mnemonic'] == 'rcc':
             vx, vy, vz, hx, hy, hz, r = coeffs
             if hx == 0.0 and hy == 0.0:
+                if hz < 0.0:
+                    vz += hz
+                    hz = -hz
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
             elif hy == 0.0 and hz == 0.0:
+                if hx < 0.0:
+                    vx += hx
+                    hx = -hx
                 surf = RCC((vx, vy, vz), hx, r, axis='x')
             elif hx == 0.0 and hz == 0.0:
+                if hy < 0.0:
+                    vy += hy
+                    hy = -hy
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
             else:
-                raise NotImplementedError('RCC macrobody with non-axis-aligned'
-                                          'height vector not supported.')
+                # Create vectors for Z-axis and cylinder orientation
+                u = np.array([0., 0., 1.])
+                h = np.array([hx, hy, hz])
+
+                # Determine rotation matrix to transform u -> h
+                rotation = rotation_matrix(u, h)
+
+                # Create RCC aligned with Z-axis
+                height = np.linalg.norm(h)
+                surf = RCC((vx, vy, vz), height, r, axis='z')
+
+                # Rotate the RCC
+                surf = surf.rotate(rotation, pivot=(vx, vy, vz))
+
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
@@ -446,7 +523,6 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
                 if use_degrees:
                     rotation_matrix = np.cos(rotation_matrix * pi/180.0)
-                print(rotation_matrix)
                 c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
 
             # Update surfaces dictionary with new surfaces
@@ -659,8 +735,8 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 # itself -- since OpenMC can't handle this directly, we need
                 # to create an extra cell/universe to fill in the lattice
                 if np.any(univ_ids == uid):
-                    c = openmc.Cell(fill=mat)
-                    u = openmc.Universe(cells=[c])
+                    extra_cell = openmc.Cell(fill=mat)
+                    u = openmc.Universe(cells=[extra_cell])
                     univ_ids[univ_ids == uid] = u.id
 
                     # Put it in universes dictionary so that get_universe
@@ -674,9 +750,9 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 if not np.all(center == 0.0):
                     for uid in np.unique(univ_ids):
                         # Create translated universe
-                        c = openmc.Cell(fill=get_universe(uid))
-                        c.translation = -center
-                        u = openmc.Universe(cells=[c])
+                        trans_cell = openmc.Cell(fill=get_universe(uid))
+                        trans_cell.translation = -center
+                        u = openmc.Universe(cells=[trans_cell])
                         universes[u.id] = u
 
                         # Replace original universes with translated ones
@@ -757,13 +833,15 @@ def get_openmc_universes(cells, surfaces, materials, data):
     return universes
 
 
-def mcnp_to_model(filename):
+def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
     """Convert MCNP input to OpenMC model
 
     Parameters
     ----------
     filename : str
         Path to MCNP file
+    merge_surfaces : bool
+        Whether to remove redundant surfaces when the geometry is exported.
 
     Returns
     -------
@@ -780,6 +858,7 @@ def mcnp_to_model(filename):
                                             openmc_materials, data)
 
     geometry = openmc.Geometry(openmc_universes[0])
+    geometry.merge_surfaces = merge_surfaces
     materials = openmc.Materials(geometry.get_all_materials().values())
 
     settings = openmc.Settings()
@@ -792,10 +871,13 @@ def mcnp_to_model(filename):
     all_volume = openmc.Union([cell.region for cell in
                                 geometry.root_universe.cells.values()])
     ll, ur = all_volume.bounding_box
+    src_class = getattr(openmc, 'IndependentSource')
+    if src_class is None:
+        src_class = openmc.Source
     if np.any(np.isinf(ll)) or np.any(np.isinf(ur)):
-        settings.source = openmc.Source(space=openmc.stats.Point())
+        settings.source = src_class(space=openmc.stats.Point())
     else:
-        settings.source = openmc.Source(space=openmc.stats.Point((ll + ur)/2))
+        settings.source = src_class(space=openmc.stats.Point((ll + ur)/2))
 
     return openmc.Model(geometry, materials, settings)
 
@@ -804,7 +886,12 @@ def mcnp_to_openmc():
     """Command-line interface for converting MCNP model"""
     parser = argparse.ArgumentParser()
     parser.add_argument('mcnp_filename')
+    parser.add_argument('--merge-surfaces', action='store_true',
+                        help='Remove redundant surfaces when exporting XML')
+    parser.add_argument('--no-merge-surfaces', dest='download', action='store_false',
+                        help='Do not remove redundant surfaces when exporting XML')
+    parser.set_defaults(merge_surfaces=True)
     args = parser.parse_args()
 
-    model = mcnp_to_model(args.mcnp_filename)
+    model = mcnp_to_model(args.mcnp_filename, args.merge_surfaces)
     model.export_to_xml()
