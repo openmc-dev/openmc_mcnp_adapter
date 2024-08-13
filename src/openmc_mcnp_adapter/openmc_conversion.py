@@ -19,6 +19,53 @@ from openmc.model import surface_composite
 from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 
 
+def rotation_matrix(v1, v2):
+    """Compute rotation matrix that would rotate v1 into v2.
+
+    Parameters
+    ----------
+    v1 : numpy.ndarray
+        Unrotated vector
+    v2 : numpy.ndarray
+        Rotated vector
+
+    Returns
+    -------
+    3x3 rotation matrix
+
+    """
+    # Normalize vectors
+    u1 = v1 / np.linalg.norm(v1)
+    u2 = v2 / np.linalg.norm(v2)
+
+    # Calculate axis of rotation
+    axis = np.cross(u1, u2)
+    axis /= np.linalg.norm(axis)
+
+    I = np.identity(3)
+
+    # Handle special case where vectors are parallel or anti-parallel
+    if abs(np.dot(u2, axis) - 1.0) < 1e-8:
+        return I
+    elif abs(np.dot(u2, axis) + 1.0) < 1e-8:
+        return -I
+    else:
+        # Calculate rotation angle
+        cos_angle = np.dot(u1, u2)
+        sin_angle = np.sqrt(1 - cos_angle*cos_angle)
+
+        # Create cross-product matrix K
+        kx, ky, kz = axis
+        K = np.array([
+            [0.0, -kz, ky],
+            [kz, 0.0, -kx],
+            [-ky, kx, 0.0]
+        ])
+
+        # Create rotation matrix using Rodrigues' rotation formula
+        return I + K * sin_angle + (K @ K) * (1 - cos_angle)
+
+
 def get_openmc_materials(materials):
     """Get OpenMC materials from MCNP materials
 
@@ -239,14 +286,35 @@ def get_openmc_surfaces(surfaces, data):
         elif s['mnemonic'] == 'rcc':
             vx, vy, vz, hx, hy, hz, r = coeffs
             if hx == 0.0 and hy == 0.0:
+                if hz < 0.0:
+                    vz += hz
+                    hz = -hz
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
             elif hy == 0.0 and hz == 0.0:
+                if hx < 0.0:
+                    vx += hx
+                    hx = -hx
                 surf = RCC((vx, vy, vz), hx, r, axis='x')
             elif hx == 0.0 and hz == 0.0:
+                if hy < 0.0:
+                    vy += hy
+                    hy = -hy
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
             else:
-                raise NotImplementedError('RCC macrobody with non-axis-aligned'
-                                          'height vector not supported.')
+                # Create vectors for Z-axis and cylinder orientation
+                u = np.array([0., 0., 1.])
+                h = np.array([hx, hy, hz])
+
+                # Determine rotation matrix to transform u -> h
+                rotation = rotation_matrix(u, h)
+
+                # Create RCC aligned with Z-axis
+                height = np.linalg.norm(h)
+                surf = RCC((vx, vy, vz), height, r, axis='z')
+
+                # Rotate the RCC
+                surf = surf.rotate(rotation, pivot=(vx, vy, vz))
+
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
@@ -370,7 +438,6 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
                 if use_degrees:
                     rotation_matrix = np.cos(rotation_matrix * pi/180.0)
-                print(rotation_matrix)
                 c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
 
             # Update surfaces dictionary with new surfaces
