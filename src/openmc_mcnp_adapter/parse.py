@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022 UChicago Argonne, LLC
+# SPDX-FileCopyrightText: 2022-2024 UChicago Argonne, LLC and contributors
 # SPDX-License-Identifier: MIT
 
 from collections import defaultdict
