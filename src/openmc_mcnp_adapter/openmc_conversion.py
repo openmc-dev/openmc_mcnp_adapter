@@ -176,7 +176,7 @@ def get_openmc_surfaces(surfaces, data):
             surf = openmc.ZPlane(surface_id=s['id'], z0=coeffs[0])
         elif s['mnemonic'] == 'so':
             surf = openmc.Sphere(surface_id=s['id'], r=coeffs[0])
-        elif s['mnemonic'] == 's':
+        elif s['mnemonic'] in ('s', 'sph'):
             x0, y0, z0, R = coeffs
             surf = openmc.Sphere(surface_id=s['id'], x0=x0, y0=y0, z0=z0, r=R)
         elif s['mnemonic'] == 'sx':
