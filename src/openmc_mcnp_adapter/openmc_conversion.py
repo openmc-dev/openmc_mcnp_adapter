@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022 UChicago Argonne, LLC
+# SPDX-FileCopyrightText: 2022-2024 UChicago Argonne, LLC and contributors
 # SPDX-License-Identifier: MIT
 
 import argparse
@@ -197,7 +197,7 @@ def get_openmc_surfaces(surfaces, data):
             surf = openmc.ZPlane(surface_id=s['id'], z0=coeffs[0])
         elif s['mnemonic'] == 'so':
             surf = openmc.Sphere(surface_id=s['id'], r=coeffs[0])
-        elif s['mnemonic'] == 's':
+        elif s['mnemonic'] in ('s', 'sph'):
             x0, y0, z0, R = coeffs
             surf = openmc.Sphere(surface_id=s['id'], x0=x0, y0=y0, z0=z0, r=R)
         elif s['mnemonic'] == 'sx':
@@ -339,11 +339,14 @@ def get_openmc_surfaces(surfaces, data):
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
         elif s['mnemonic'] == 'box':
-            if len(coeffs) == 9:
-                raise NotImplementedError('BOX macrobody with one infinite dimension not supported')
-            elif len(coeffs) != 12:
-                raise NotImplementedError('BOX macrobody should have 12 coefficients')
-            surf = surface_composite.Box(coeffs[:3], coeffs[3:6], coeffs[6:9], coeffs[9:])
+            v = coeffs[:3]
+            a1 = coeffs[3:6]
+            a2 = coeffs[6:9]
+            if len(coeffs) == 12:
+                a3 = coeffs[9:]
+                surf = surface_composite.OrthogonalBox(v, a1, a2, a3)
+            else:
+                surf = surface_composite.OrthogonalBox(v, a1, a2)
         else:
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
