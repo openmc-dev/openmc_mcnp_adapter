@@ -280,7 +280,7 @@ def sanitize(section):
     """
 
     # Remove end-of-line comments
-    section = re.sub('\$.*$', '', section, flags=re.MULTILINE)
+    section = re.sub(r'\$.*$', '', section, flags=re.MULTILINE)
 
     # Remove comment cards
     section = re.sub('^[ \t]*?[cC].*?$\n?', '', section, flags=re.MULTILINE)
