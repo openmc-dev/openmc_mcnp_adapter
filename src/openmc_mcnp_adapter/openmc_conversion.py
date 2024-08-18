@@ -13,7 +13,8 @@ from openmc.data.ace import get_metadata
 from openmc.model.surface_composite import (
     CompositeSurface,
     RightCircularCylinder as RCC,
-    RectangularParallelepiped as RPP
+    RectangularParallelepiped as RPP,
+    OrthogonalBox as BOX,
 )
 from openmc.model import surface_composite
 
@@ -24,18 +25,26 @@ from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 # attribute name and whether or not to flip the sense of that surface
 # based on the facet surface's relationship to the composite surface region
 _MACROBODY_FACETS = {
+    BOX: {
+        1: ('ax1_max', False),
+        2: ('ax1_min', False),
+        3: ('ax2_max', False),
+        4: ('ax2_min', False),
+        5: ('ax3_max', False),
+        6: ('ax3_min', False),
+    },
     RCC: {
         1: ('cyl', False),
         2: ('top', False),
         3: ('bottom', True)
     },
     RPP: {
-        1: ('xmin', True),
-        2: ('xmax', False),
-        3: ('ymin', True),
-        4: ('ymax', False),
-        5: ('zmin', True),
-        6: ('zmax', False)
+        1: ('xmax', True),
+        2: ('xmin', False),
+        3: ('ymax', True),
+        4: ('ymin', False),
+        5: ('zmax', True),
+        6: ('zmin', False)
     }
 }
 
@@ -344,9 +353,9 @@ def get_openmc_surfaces(surfaces, data):
             a2 = coeffs[6:9]
             if len(coeffs) == 12:
                 a3 = coeffs[9:]
-                surf = surface_composite.OrthogonalBox(v, a1, a2, a3)
+                surf = BOX(v, a1, a2, a3)
             else:
-                surf = surface_composite.OrthogonalBox(v, a1, a2)
+                surf = BOX(v, a1, a2)
         else:
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
