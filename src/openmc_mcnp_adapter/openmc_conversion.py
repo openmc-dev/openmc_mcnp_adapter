@@ -205,8 +205,8 @@ def get_openmc_surfaces(surfaces, data):
             surf = openmc.ZCylinder(surface_id=s['id'], r=coeffs[0])
         elif s['mnemonic'] in ('k/x', 'k/y', 'k/z'):
             x0, y0, z0, R2 = coeffs[:4]
-            if len(coeffs) > 4:
-                up = (coeffs[4] == 1)
+            if len(coeffs) > 4 and coeffs[4] != 0.0:
+                up = (coeffs[4] > 0.0)
                 if s['mnemonic'] == 'k/x':
                     surf = surface_composite.XConeOneSided(x0=x0, y0=y0, z0=z0, r2=R2, up=up)
                 elif s['mnemonic'] == 'k/y':
@@ -222,8 +222,8 @@ def get_openmc_surfaces(surfaces, data):
                     surf = openmc.ZCone(surface_id=s['id'], x0=x0, y0=y0, z0=z0, r2=R2)
         elif s['mnemonic'] in ('kx', 'ky', 'kz'):
             x, R2 = coeffs[:2]
-            if len(coeffs) > 2:
-                up = (coeffs[2] == 1)
+            if len(coeffs) > 2 and coeffs[2] != 0.0:
+                up = (coeffs[2] > 0.0)
                 if s['mnemonic'] == 'kx':
                     surf = surface_composite.XConeOneSided(x0=x, r2=R2, up=up)
                 elif s['mnemonic'] == 'ky':
