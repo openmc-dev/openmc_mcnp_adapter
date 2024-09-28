@@ -15,6 +15,7 @@ from openmc.model.surface_composite import (
     RightCircularCylinder as RCC,
     RectangularParallelepiped as RPP,
     OrthogonalBox as BOX,
+    ConicalFrustum as TRC,
 )
 from openmc.model import surface_composite
 
@@ -45,6 +46,11 @@ _MACROBODY_FACETS = {
         4: ('ymin', False),
         5: ('zmax', True),
         6: ('zmin', False)
+    },
+    TRC: {
+        1: ('cone', False),
+        2: ('plane_top', False),
+        3: ('plane_bottom', True),
     }
 }
 
@@ -356,6 +362,12 @@ def get_openmc_surfaces(surfaces, data):
                 surf = BOX(v, a1, a2, a3)
             else:
                 surf = BOX(v, a1, a2)
+        elif s['mnemonic'] == 'trc':
+            v = coeffs[:3]
+            h = coeffs[3:6]
+            r1 = coeffs[6]
+            r2 = coeffs[7]
+            surf = TRC(v, h, r1, r2)
         else:
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
