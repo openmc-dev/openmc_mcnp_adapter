@@ -11,12 +11,42 @@ import openmc
 from openmc.data import get_thermal_name
 from openmc.data.ace import get_metadata
 from openmc.model.surface_composite import (
+    CompositeSurface,
     RightCircularCylinder as RCC,
-    RectangularParallelepiped as RPP
+    RectangularParallelepiped as RPP,
+    OrthogonalBox as BOX,
 )
 from openmc.model import surface_composite
 
 from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
+
+
+# The facet number corresponding to the SurfaceComposite's surface by
+# attribute name and whether or not to flip the sense of that surface
+# based on the facet surface's relationship to the composite surface region
+_MACROBODY_FACETS = {
+    BOX: {
+        1: ('ax1_max', False),
+        2: ('ax1_min', False),
+        3: ('ax2_max', False),
+        4: ('ax2_min', False),
+        5: ('ax3_max', False),
+        6: ('ax3_min', False),
+    },
+    RCC: {
+        1: ('cyl', False),
+        2: ('top', False),
+        3: ('bottom', True)
+    },
+    RPP: {
+        1: ('xmax', True),
+        2: ('xmin', False),
+        3: ('ymax', True),
+        4: ('ymin', False),
+        5: ('zmax', True),
+        6: ('zmin', False)
+    }
+}
 
 
 def rotation_matrix(v1, v2):
@@ -323,9 +353,9 @@ def get_openmc_surfaces(surfaces, data):
             a2 = coeffs[6:9]
             if len(coeffs) == 12:
                 a3 = coeffs[9:]
-                surf = surface_composite.OrthogonalBox(v, a1, a2, a3)
+                surf = BOX(v, a1, a2, a3)
             else:
-                surf = surface_composite.OrthogonalBox(v, a1, a2)
+                surf = BOX(v, a1, a2)
         else:
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
@@ -349,6 +379,65 @@ def get_openmc_surfaces(surfaces, data):
             openmc_surfaces.update((-surf).get_surfaces())
 
     return openmc_surfaces
+
+
+def replace_macrobody_facets(region: str, surfaces: dict) -> str:
+    """Replace macrobody facet identifiers with the corresponding OpenMC surface
+
+    Parameters
+    ----------
+    region : str
+        Boolean expression relating surface half-spaces.
+    surfaces : dict
+        Dictionary mapping surface ID to :class:`openmc.Surface`
+
+    Returns
+    -------
+    str
+        An updated expression replacing the macrobody facet specification with
+        the ID of that surface in the SurfaceComposite object.
+    """
+    # Get list of facets, sorted by string length to ensure that, e.g.,
+    # replacing '3.1' will not happen before replacing '23.1'
+    facets = set(re.findall(r'[-+]?\d+\.\d', region))
+    facets = sorted(facets, key=len, reverse=True)
+
+    for facet in facets:
+        # Break up macrobody facet into surface ID and facet number
+        surface_id, facet_num = facet.split('.')
+        surface_id = int(surface_id)
+        facet_num = int(facet_num)
+
+        # Get corresponding composite surface
+        composite_surf = surfaces[abs(surface_id)]
+        if isinstance(composite_surf, CompositeSurface):
+            # Get composite surface and whether to flip sense
+            facet_attr, flip_sense = _MACROBODY_FACETS[type(composite_surf)][facet_num]
+            facet_surface = getattr(composite_surf, facet_attr)
+        else:
+            warnings.warn(f'Macrobody facet {facet} ignored (not a macrobody)')
+            facet_surface = composite_surf
+            flip_sense = False
+
+        # Get corresponding surface and its ID
+        facet_id = facet_surface.id
+
+        # starting with a positive facet ID, adjust for:
+        # a) the specified sense in the original expression
+        if surface_id < 0:
+            facet_id = -facet_id
+
+        # b) the sense of the facet with respect to the macrobody
+        if flip_sense:
+            facet_id = -facet_id
+
+        # ensure this surface is present in the surfaces dictionary
+        surfaces[facet_surface.id] = facet_surface
+
+        # re-build the region expression with this entry in place of the macrobody facet entry
+        region = region.replace(facet, str(facet_id))
+
+    return region
 
 
 def get_openmc_universes(cells, surfaces, materials, data):
@@ -404,6 +493,11 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         # Assign region to cell based on expression
         region = c['region'].replace('#', '~').replace(':', '|')
+
+        # Replace macrobody facet specifiers in the region expression
+        if '.' in region:
+            region = replace_macrobody_facets(region, surfaces)
+
         try:
             c['_region'] = openmc.Region.from_expression(region, surfaces)
         except Exception:
@@ -482,6 +576,11 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         # Assign region to cell based on expression
         region = region.replace('#', '~').replace(':', '|')
+
+        # Replace macrobody facet specifiers in the region expression
+        if '.' in region:
+            region = replace_macrobody_facets(region, surfaces)
+
         try:
             c['_region'] = openmc.Region.from_expression(region, surfaces)
         except Exception:
