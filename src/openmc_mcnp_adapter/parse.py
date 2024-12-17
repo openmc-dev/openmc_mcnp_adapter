@@ -96,6 +96,13 @@ def parse_cell(line):
             region = g[2].strip()
         else:
             words = g[2].split()
+            # MCNP allows the density and the start of the geometry
+            # specification to appear without a space inbetween if the geometry
+            # starts with '('. If this happens, move the end of the first word
+            # onto the second word to ensure the density is by itself
+            if (pos := words[0].find('(')) >= 0:
+                words[1] = words[0][pos:] + words[1]
+                words[0] = words[0][:pos]
             density = float_(words[0])
             region = ' '.join(words[1:])
         return {
