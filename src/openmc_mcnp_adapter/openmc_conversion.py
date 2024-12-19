@@ -912,10 +912,17 @@ def mcnp_to_openmc():
     parser.add_argument('mcnp_filename')
     parser.add_argument('--merge-surfaces', action='store_true',
                         help='Remove redundant surfaces when exporting XML')
-    parser.add_argument('--no-merge-surfaces', dest='download', action='store_false',
+    parser.add_argument('--no-merge-surfaces', dest='merge_surfaces', action='store_false',
                         help='Do not remove redundant surfaces when exporting XML')
+    parser.add_argument('-o', '--output', default='model.xml',
+                        help='Name for the OpenMC model XML file')
+    parser.add_argument('-s', '--separate-xml', action='store_true',
+                        help='Write separate XML files')
     parser.set_defaults(merge_surfaces=True)
     args = parser.parse_args()
 
     model = mcnp_to_model(args.mcnp_filename, args.merge_surfaces)
-    model.export_to_xml()
+    if args.separate_xml:
+        model.export_to_xml()
+    else:
+        model.export_to_model_xml(args.output)
