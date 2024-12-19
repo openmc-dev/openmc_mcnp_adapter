@@ -243,6 +243,10 @@ def parse_data(section):
             else:
                 rotation = None
             data['tr'][tr_num] = (displacement, rotation)
+        else:
+            words = line.split()
+            if words:
+                data[words[0]] = words[1:]
 
     return data
 
