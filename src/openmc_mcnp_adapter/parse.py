@@ -272,7 +272,7 @@ def split_mcnp(filename):
     return re.split('\n[ \t]*\n', text)
 
 
-def sanitize(section):
+def sanitize(section: str) -> str:
     """Sanitize one section of an MCNP input
 
     This function will remove comments, join continuation lines into a single
@@ -289,6 +289,9 @@ def sanitize(section):
         Sanitized input section
 
     """
+
+    # Replace tab characters
+    section = section.expandtabs()
 
     # Remove end-of-line comments
     section = re.sub(r'\$.*$', '', section, flags=re.MULTILINE)
