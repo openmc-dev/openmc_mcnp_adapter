@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022-2024 UChicago Argonne, LLC and contributors
+# SPDX-FileCopyrightText: 2022-2025 UChicago Argonne, LLC and contributors
 # SPDX-License-Identifier: MIT
 
 from collections import defaultdict
@@ -13,6 +13,7 @@ _KEYWORDS = [
     r'\*?trcl', r'\*?fill', 'tmp', 'u', 'lat',
     'imp:.', 'vol', 'pwt', 'ext:.', 'fcl', 'wwn', 'dxc', 'nonu', 'pd',
     'elpt', 'cosy', 'bflcl', 'unc',
+    'pmt'  # D1SUNED-specific
 ]
 _ANY_KEYWORD = '|'.join(f'(?:{k})' for k in _KEYWORDS)
 _CELL_PARAMETERS_RE = re.compile(rf"""
@@ -31,7 +32,7 @@ _MATERIAL_RE = re.compile(r'\s*[Mm](\d+)((?:\s+\S+)+)')
 _TR_RE = re.compile(r'\s*(\*)?[Tt][Rr](\d+)\s+(.*)')
 _SAB_RE = re.compile(r'\s*[Mm][Tt](\d+)((?:\s+\S+)+)')
 _MODE_RE = re.compile(r'\s*mode(?:\s+\S+)*')
-_COMPLEMENT_RE = re.compile(r'(#)(\d+)')
+_COMPLEMENT_RE = re.compile(r'(#)[ ]*(\d+)')
 _REPEAT_RE = re.compile(r'(\d+)\s+(\d+)[rR]')
 _NUM_RE = re.compile(r'(\d)([+-])(\d)')
 
