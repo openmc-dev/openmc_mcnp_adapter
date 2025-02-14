@@ -604,6 +604,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
     # Now that all cell regions have been converted, the next loop is to create
     # actual Cell/Universe/Lattice objects
+    material_clones = {}
     for c in cells:
         cell = openmc.Cell(cell_id=c['id'])
 
@@ -647,13 +648,13 @@ def get_openmc_universes(cells, surfaces, materials, data):
                     mat.set_density('g/cm3', abs(c['density']))
             else:
                 if mat.density != abs(c['density']):
-                    print("WARNING: Cell {} has same material but with a "
-                          "different density than that of another.".format(c['id']))
-                    mat = mat.clone()
-                    if c['density'] > 0:
-                        mat.set_density('atom/b-cm', c['density'])
-                    else:
-                        mat.set_density('g/cm3', abs(c['density']))
+                    key = (c['material'], c['density'])
+                    if key not in material_clones:
+                        material_clones[key] = mat = mat.clone()
+                        if c['density'] > 0:
+                            mat.set_density('atom/b-cm', c['density'])
+                        else:
+                            mat.set_density('g/cm3', abs(c['density']))
 
         # Create lattices
         if 'fill' in c['parameters'] or '*fill' in c['parameters']:
