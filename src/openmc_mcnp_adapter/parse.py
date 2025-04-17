@@ -24,6 +24,15 @@ _CELL_PARAMETERS_RE = re.compile(rf"""
 """, re.VERBOSE
 )
 
+_READ_RE = re.compile(r"""
+    \s*read         # Keyword
+    \s.*?file       # Everything up to filename
+    \s*=\s*         # = sign (required) with optional spaces
+    (\S+)           # The file name is anything without whitespace
+    .*              # Anything else until end-of-line
+""", re.IGNORECASE | re.VERBOSE
+)
+
 _CELL1_RE = re.compile(r'\s*(\d+)\s+(\d+)([ \t0-9:#().dDeE\+-]+)\s*(.*)')
 _CELL2_RE = re.compile(r'\s*(\d+)\s+like\s+(\d+)\s+but\s*(.*)')
 _CELL_FILL_RE = re.compile(r'\s*(\d+)\s*(?:\((.*)\))?')
