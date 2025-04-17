@@ -263,9 +263,8 @@ def parse_data(section):
 
 
 def read_file(filename):
-    """Read the MCNP input file and any files referenced by a READ card
+    """Recursively read the MCNP input file and files referenced by READ cards
 
-    Replacement is once-through (i.e., no nested READ cards).
     READ card keywords other than FILE are ignored.
 
     Parameters
@@ -288,8 +287,7 @@ def read_file(filename):
         if not os.path.isfile(target):
             errstr = f"In card {repr(card)}, failed to find: {target}"
             raise FileNotFoundError(errstr)
-        with open(target, 'r') as fh:
-            subtext = fh.read()
+        subtext = read_file(target)
         text = text.replace(card, subtext)
     return text
 
