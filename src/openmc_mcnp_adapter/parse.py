@@ -252,8 +252,8 @@ def parse_data(section):
     return data
 
 
-def split_mcnp(filename):
-    """Split MCNP file into three strings, one for each block
+def read_file(filename):
+    """Read the MCNP input file files referenced by a READ card
 
     Parameters
     ----------
@@ -262,12 +262,31 @@ def split_mcnp(filename):
 
     Returns
     -------
+    str
+        Text of the MCNP input file
+
+    """
+    with open(filename, 'r') as fh:
+        text = fh.read()
+    # TODO: Implement 'read file=...' (Issue #29)
+    return text
+
+
+def split_mcnp(text):
+    """Split MCNP file into three strings, one for each block
+
+    Parameters
+    ----------
+    text : str
+        Text of the MCNP input file
+
+    Returns
+    -------
     list of str
         List containing one string for each block
 
     """
     # Find beginning of cell section
-    text = open(filename, 'r').read()
     m = re.search(r'^[ \t]*(\d+)[ \t]+', text, flags=re.MULTILINE)
     text = text[m.start():]
     return re.split('\n[ \t]*\n', text)
@@ -331,8 +350,11 @@ def parse(filename):
         Dictionary containing data-block information, including materials
 
     """
+    # Read the text of the file and any referenced files into memory
+    text = read_file(filename)
+
     # Split file into main three sections (cells, surfaces, data)
-    sections = split_mcnp(filename)
+    sections = split_mcnp(text)
 
     # Sanitize lines (remove comments, continuation lines, etc.)
     cell_section = sanitize(sections[0])
