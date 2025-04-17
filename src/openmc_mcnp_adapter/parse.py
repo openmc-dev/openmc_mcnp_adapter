@@ -5,6 +5,7 @@ from collections import defaultdict
 from copy import deepcopy
 from math import pi
 import re
+import os
 
 import numpy as np
 
@@ -262,7 +263,10 @@ def parse_data(section):
 
 
 def read_file(filename):
-    """Read the MCNP input file files referenced by a READ card
+    """Read the MCNP input file and any files referenced by a READ card
+
+    Replacement is once-through (i.e., no nested READ cards).
+    READ card keywords other than FILE are ignored.
 
     Parameters
     ----------
@@ -275,9 +279,18 @@ def read_file(filename):
         Text of the MCNP input file
 
     """
+    directory = os.path.dirname(os.path.abspath(filename))
     with open(filename, 'r') as fh:
         text = fh.read()
-    # TODO: Implement 'read file=...' (Issue #29)
+    for match in tuple(_READ_RE.finditer(text)):
+        card = match[0].strip()
+        target = os.path.join(directory, match[1])
+        if not os.path.isfile(target):
+            errstr = f"In card {repr(card)}, failed to find: {target}"
+            raise FileNotFoundError(errstr)
+        with open(target, 'r') as fh:
+            subtext = fh.read()
+        text = text.replace(card, subtext)
     return text
 
 
