@@ -30,8 +30,14 @@ classifiers = [
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Physics",
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [project.urls]
 "Bug Tracker" = "https://github.com/openmc-dev/openmc_mcnp_adapter/issues"

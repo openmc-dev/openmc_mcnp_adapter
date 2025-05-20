@@ -4,6 +4,7 @@
 import argparse
 from math import pi
 import re
+import tempfile
 import warnings
 
 import numpy as np
@@ -639,22 +640,25 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         # Determine material fill if present -- this is not assigned until later
         # in case it's used in a lattice (need to create an extra universe then)
-        if c['material'] > 0:
-            mat = materials[c['material']]
+        cell_material_id: int = c['material']
+        if cell_material_id > 0:
+            mat = materials[cell_material_id]
+            cell_density = c['density']
             if mat.density is None:
-                if c['density'] > 0:
-                    mat.set_density('atom/b-cm', c['density'])
+                if cell_density > 0:
+                    mat.set_density('atom/b-cm', cell_density)
                 else:
-                    mat.set_density('g/cm3', abs(c['density']))
-            else:
-                if mat.density != abs(c['density']):
-                    key = (c['material'], c['density'])
-                    if key not in material_clones:
-                        material_clones[key] = mat = mat.clone()
-                        if c['density'] > 0:
-                            mat.set_density('atom/b-cm', c['density'])
-                        else:
-                            mat.set_density('g/cm3', abs(c['density']))
+                    mat.set_density('g/cm3', abs(cell_density))
+            elif mat.density != abs(c['density']):
+                key = (cell_material_id, cell_density)
+                if key not in material_clones:
+                    material_clones[key] = mat = mat.clone()
+                    if c['density'] > 0:
+                        mat.set_density('atom/b-cm', c['density'])
+                    else:
+                        mat.set_density('g/cm3', abs(c['density']))
+                else:
+                    mat = material_clones[key]
 
         # Create lattices
         if 'fill' in c['parameters'] or '*fill' in c['parameters']:
@@ -905,6 +909,13 @@ def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
         settings.source = src_class(space=openmc.stats.Point((ll + ur)/2))
 
     return openmc.Model(geometry, materials, settings)
+
+
+def mcnp_str_to_model(text: str, merge_surfaces: bool = True):
+    with tempfile.NamedTemporaryFile('w', delete_on_close=False) as fp:
+        fp.write(text)
+        fp.close()
+        return mcnp_to_model(fp.name, merge_surfaces)
 
 
 def mcnp_to_openmc():
