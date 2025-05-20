@@ -3,6 +3,7 @@
 
 import argparse
 from math import pi
+import os
 import re
 import tempfile
 import warnings
@@ -912,10 +913,16 @@ def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
 
 
 def mcnp_str_to_model(text: str, merge_surfaces: bool = True):
-    with tempfile.NamedTemporaryFile('w', delete_on_close=False) as fp:
+    # Write string to a temporary file
+    with tempfile.NamedTemporaryFile('w', delete=False) as fp:
         fp.write(text)
-        fp.close()
-        return mcnp_to_model(fp.name, merge_surfaces)
+
+    # Parse model from file
+    model = mcnp_to_model(fp.name, merge_surfaces)
+
+    # Remove temporary file and return model
+    os.remove(fp.name)
+    return model
 
 
 def mcnp_to_openmc():
