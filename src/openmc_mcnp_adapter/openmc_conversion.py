@@ -628,13 +628,13 @@ def get_openmc_universes(cells, surfaces, materials, data):
         # Look for vacuum boundary condition
         if isinstance(cell.region, openmc.Union):
             if all([isinstance(n, openmc.Halfspace) for n in cell.region]):
-                if 'imp:n' in c['parameters'] and c['parameters']['imp:n'] == '0':
+                if 'imp:n' in c['parameters'] and float(c['parameters']['imp:n']) == 0.0:
                     for n in cell.region:
                         if n.surface.boundary_type == 'transmission':
                             n.surface.boundary_type = 'vacuum'
                     root_universe.remove_cell(cell)
         elif isinstance(cell.region, openmc.Halfspace):
-            if 'imp:n' in c['parameters'] and c['parameters']['imp:n'] == '0':
+            if 'imp:n' in c['parameters'] and float(c['parameters']['imp:n']) == 0.0:
                 if cell.region.surface.boundary_type == 'transmission':
                     cell.region.surface.boundary_type = 'vacuum'
                 root_universe.remove_cell(cell)
