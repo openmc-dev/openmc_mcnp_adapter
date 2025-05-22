@@ -1,0 +1,41 @@
+name: Run tests
+
+on:
+  # allows us to run workflows manually
+  workflow_dispatch:
+
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    container: openmc/openmc:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apt dependencies
+        shell: bash
+        run: |
+          apt -y update
+          apt install -y python3-venv
+          python -m venv venv
+          source venv/bin/activate
+
+      - name: Install
+        shell: bash
+        run: |
+          pip install -U pip
+          pushd /root/OpenMC/openmc
+          pip install .[test]
+          popd
+          pip install .[test]
+
+      - name: Test
+        shell: bash
+        run: pytest -rs tests
