@@ -632,12 +632,12 @@ def get_openmc_universes(cells, surfaces, materials, data):
                     for n in cell.region:
                         if n.surface.boundary_type == 'transmission':
                             n.surface.boundary_type = 'vacuum'
-                    root_universe.remove_cell(cell)
+                    root_universe.add_cell(cell)
         elif isinstance(cell.region, openmc.Halfspace):
             if 'imp:n' in c['parameters'] and float(c['parameters']['imp:n']) == 0.0:
                 if cell.region.surface.boundary_type == 'transmission':
                     cell.region.surface.boundary_type = 'vacuum'
-                root_universe.remove_cell(cell)
+                root_universe.add_cell(cell)
 
         # Determine material fill if present -- this is not assigned until later
         # in case it's used in a lattice (need to create an extra universe then)
