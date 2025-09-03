@@ -323,18 +323,25 @@ def get_openmc_surfaces(surfaces, data):
                 raise NotImplementedError(f"{s['mnemonic']} surface with {len(coeffs)} parameters")
         elif s['mnemonic'] == 'rcc':
             vx, vy, vz, hx, hy, hz, r = coeffs
+            
+            # Track if height vector is negative (for facet mapping later)
+            height_was_negative = False
+            
             if hx == 0.0 and hy == 0.0:
                 if hz < 0.0:
+                    height_was_negative = True
                     vz += hz
                     hz = -hz
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
             elif hy == 0.0 and hz == 0.0:
                 if hx < 0.0:
+                    height_was_negative = True
                     vx += hx
                     hx = -hx
                 surf = RCC((vx, vy, vz), hx, r, axis='x')
             elif hx == 0.0 and hz == 0.0:
                 if hy < 0.0:
+                    height_was_negative = True
                     vy += hy
                     hy = -hy
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
@@ -342,16 +349,27 @@ def get_openmc_surfaces(surfaces, data):
                 # Create vectors for Z-axis and cylinder orientation
                 u = np.array([0., 0., 1.])
                 h = np.array([hx, hy, hz])
-
+                
+                # Check if any component of height is making it point backwards
+                # This is more complex for arbitrary orientations
+                height_magnitude = np.linalg.norm(h)
+                if height_magnitude < 0:  # This won't happen with norm
+                    height_was_negative = True
+                # For arbitrary orientation, we'd need more logic here
+        
                 # Determine rotation matrix to transform u -> h
                 rotation = rotation_matrix(u, h)
-
+        
                 # Create RCC aligned with Z-axis
                 height = np.linalg.norm(h)
                 surf = RCC((vx, vy, vz), height, r, axis='z')
-
+        
                 # Rotate the RCC
                 surf = surf.rotate(rotation, pivot=(vx, vy, vz))
+            
+            # Store whether height was negative as an attribute
+            # This will be used in replace_macrobody_facets
+            surf._mcnp_negative_height = height_was_negative
 
         elif s['mnemonic'] == 'rpp':
             surf = RPP(*coeffs)
@@ -424,10 +442,19 @@ def replace_macrobody_facets(region: str, surfaces: dict) -> str:
 
         # Get corresponding composite surface
         composite_surf = surfaces[abs(surface_id)]
+        
         if isinstance(composite_surf, CompositeSurface):
+            # Special handling for RCC facets that had negative height in MCNP
+            if isinstance(composite_surf, RCC) and facet_num in [2, 3]:
+                # Check if this RCC was created from negative height
+                if hasattr(composite_surf, '_mcnp_negative_height') and composite_surf._mcnp_negative_height:
+                    # Swap facets 2 and 3
+                    facet_num = 5 - facet_num
+            
             # Get composite surface and whether to flip sense
             facet_attr, flip_sense = _MACROBODY_FACETS[type(composite_surf)][facet_num]
             facet_surface = getattr(composite_surf, facet_attr)
+                
         else:
             warnings.warn(f'Macrobody facet {facet} ignored (not a macrobody)')
             facet_surface = composite_surf
