@@ -5,7 +5,7 @@ from collections import defaultdict
 from copy import deepcopy
 from math import pi
 import re
-import os
+from pathlib import Path
 
 import numpy as np
 
@@ -26,12 +26,13 @@ _CELL_PARAMETERS_RE = re.compile(rf"""
 )
 
 _READ_RE = re.compile(r"""
+    ^               # Beginning of line
     \s*read         # Keyword
     \s.*?file       # Everything up to filename
     \s*=\s*         # = sign (required) with optional spaces
     (\S+)           # The file name is anything without whitespace
     .*              # Anything else until end-of-line
-""", re.IGNORECASE | re.VERBOSE
+""", re.IGNORECASE | re.VERBOSE | re.MULTILINE
 )
 
 _CELL1_RE = re.compile(r'\s*(\d+)\s+(\d+)([ \t0-9:#().dDeE\+-]+)\s*(.*)')
@@ -262,7 +263,7 @@ def parse_data(section):
     return data
 
 
-def read_file(filename):
+def expand_read_cards(filename) -> str:
     """Recursively read the MCNP input file and files referenced by READ cards
 
     READ card keywords other than FILE are ignored.
@@ -278,16 +279,15 @@ def read_file(filename):
         Text of the MCNP input file
 
     """
-    directory = os.path.dirname(os.path.abspath(filename))
-    with open(filename, 'r') as fh:
-        text = fh.read()
-    for match in tuple(_READ_RE.finditer(text)):
+    path = Path(filename).resolve()
+    text = path.read_text()
+    for match in _READ_RE.finditer(text):
         card = match[0].strip()
-        target = os.path.join(directory, match[1])
-        if not os.path.isfile(target):
+        target = path.with_name(match[1])
+        if not target.is_file():
             errstr = f"In card {repr(card)}, failed to find: {target}"
             raise FileNotFoundError(errstr)
-        subtext = read_file(target)
+        subtext = expand_read_cards(target)
         text = text.replace(card, subtext)
     return text
 
@@ -371,7 +371,7 @@ def parse(filename):
 
     """
     # Read the text of the file and any referenced files into memory
-    text = read_file(filename)
+    text = expand_read_cards(filename)
 
     # Split file into main three sections (cells, surfaces, data)
     sections = split_mcnp(text)
