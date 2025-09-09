@@ -283,7 +283,9 @@ def expand_read_cards(filename) -> str:
     text = path.read_text()
     for match in _READ_RE.finditer(text):
         card = match[0].strip()
-        target = path.with_name(match[1])
+        # If the requested path is absolute, use it directly
+        requested = Path(match[1])
+        target = requested if requested.is_absolute() else path.parent / requested
         if not target.is_file():
             errstr = f"In card {repr(card)}, failed to find: {target}"
             raise FileNotFoundError(errstr)
