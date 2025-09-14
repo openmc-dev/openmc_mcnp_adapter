@@ -326,6 +326,9 @@ def get_openmc_surfaces(surfaces, data):
             
             # Track if height vector is negative (for facet mapping later)
             height_was_negative = False
+            # Check if cumulative components of height are making it point backwards
+            if (hx+hy+hz) < 0:  
+                height_was_negative = True
             
             if hx == 0.0 and hy == 0.0:
                 if hz < 0.0:
@@ -349,14 +352,7 @@ def get_openmc_surfaces(surfaces, data):
                 # Create vectors for Z-axis and cylinder orientation
                 u = np.array([0., 0., 1.])
                 h = np.array([hx, hy, hz])
-                
-                # Check if any component of height is making it point backwards
-                # This is more complex for arbitrary orientations
-                height_magnitude = np.linalg.norm(h)
-                if height_magnitude < 0:  # This won't happen with norm
-                    height_was_negative = True
-                # For arbitrary orientation, we'd need more logic here
-        
+
                 # Determine rotation matrix to transform u -> h
                 rotation = rotation_matrix(u, h)
         
@@ -367,8 +363,7 @@ def get_openmc_surfaces(surfaces, data):
                 # Rotate the RCC
                 surf = surf.rotate(rotation, pivot=(vx, vy, vz))
             
-            # Store whether height was negative as an attribute
-            # This will be used in replace_macrobody_facets
+            # Store whether height was negative as an attribute, this will be used in replace_macrobody_facets
             surf._mcnp_negative_height = height_was_negative
 
         elif s['mnemonic'] == 'rpp':
