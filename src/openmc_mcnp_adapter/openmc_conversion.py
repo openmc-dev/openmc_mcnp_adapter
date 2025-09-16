@@ -332,19 +332,16 @@ def get_openmc_surfaces(surfaces, data):
             
             if hx == 0.0 and hy == 0.0:
                 if hz < 0.0:
-                    height_was_negative = True
                     vz += hz
                     hz = -hz
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
             elif hy == 0.0 and hz == 0.0:
                 if hx < 0.0:
-                    height_was_negative = True
                     vx += hx
                     hx = -hx
                 surf = RCC((vx, vy, vz), hx, r, axis='x')
             elif hx == 0.0 and hz == 0.0:
                 if hy < 0.0:
-                    height_was_negative = True
                     vy += hy
                     hy = -hy
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
