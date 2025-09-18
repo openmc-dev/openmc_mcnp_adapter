@@ -38,7 +38,7 @@ jobs:
 
       - name: Test
         shell: bash
-        run: pytest --cov=src --cov-branch --cov-report=xml -rs tests
+        run: pytest --cov=openmc_mcnp_adapter --cov-branch --cov-report=xml -rs tests
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
