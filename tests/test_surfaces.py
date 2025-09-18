@@ -1,9 +1,10 @@
 from collections.abc import Sequence
+from textwrap import dedent
 
 import openmc
 from openmc.model.surface_composite import OrthogonalBox, \
     RectangularParallelepiped, RightCircularCylinder, ConicalFrustum
-from openmc_mcnp_adapter import get_openmc_surfaces
+from openmc_mcnp_adapter import mcnp_str_to_model, get_openmc_surfaces
 import pytest
 from pytest import approx, mark
 
@@ -244,7 +245,7 @@ def test_rpp_macrobody():
         ((0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 1.5), 0.0, 5.0, 1.5),
         # Negative height vector should be flipped internally (known failing behavior)
         pytest.param((0.0, 0.0, 0.0, 0.0, 0.0, -5.0, 1.0), 0.0, -5.0, 1.0,
-                     marks=pytest.mark.xfail(reason="Negative height handling not implemented", strict=False)),
+                     marks=pytest.mark.xfail(reason="Negative height handling currently broken", strict=False)),
     ],
 )
 def test_rcc_macrobody(coeffs, expected_bottom_z, expected_top_z, r):
@@ -268,6 +269,31 @@ def test_trc_macrobody():
     assert (2.01, 0., 9.99) in +surf
     assert (0., 0., -0.01) in +surf
     assert (0., 0., 10.01) in +surf
+
+
+@pytest.mark.xfail(reason="RPP facets currently broken", strict=False)
+def test_rpp_facets():
+    mcnp_str = dedent("""
+    title
+    1  1 -1.0  -1.1 -1.2
+    2  1 -1.0  -1.3 -1.4
+    3  1 -1.0  -1.5 -1.6
+
+    1  rpp -1.0 2.0 -3.0 4.0 0.5 5.5
+
+    m1   1001.80c  3.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    cells = model.geometry.get_all_cells()
+    assert (0., 0., 0.) in cells[1].region
+    assert (-2.0, 0., 0) not in cells[1].region
+    assert (2.5, 0., 0.) not in cells[1].region
+    assert (0., -1.0, 0.) in cells[2].region
+    assert (0., -4.0, 0.) not in cells[2].region
+    assert (0., 5.0, 0.) not in cells[2].region
+    assert (0., 0., 1.0) in cells[3].region
+    assert (0., 0., -2.0) not in cells[3].region
+    assert (0., 0., 6.0) not in cells[3].region
 
 
 # Remaining macrobody / complex surfaces not yet implemented in conversion:
