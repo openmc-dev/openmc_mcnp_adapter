@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           apt -y update
-          apt install -y python3-venv
+          apt install -y python3-venv curl
           python -m venv venv
           source venv/bin/activate
 
