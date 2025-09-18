@@ -302,7 +302,10 @@ def get_openmc_surfaces(surfaces, data):
             cls_plane = getattr(openmc, f'{axis}Plane')
             cls_cylinder = getattr(openmc, f'{axis}Cylinder')
             cls_cone = getattr(surface_composite, f'{axis}ConeOneSided')
-            if len(coeffs) == 4:
+            if len(coeffs) == 2:
+                x1, r1 = coeffs
+                surf = cls_plane(x1, surface_id=s['id'])
+            elif len(coeffs) == 4:
                 x1, r1, x2, r2 = coeffs
                 if x1 == x2:
                     surf = cls_plane(x1, surface_id=s['id'])
