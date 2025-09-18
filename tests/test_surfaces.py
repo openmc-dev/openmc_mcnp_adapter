@@ -271,7 +271,6 @@ def test_trc_macrobody():
     assert (0., 0., 10.01) in +surf
 
 
-@pytest.mark.xfail(reason="RPP facets currently broken", strict=False)
 def test_rpp_facets():
     mcnp_str = dedent("""
     title

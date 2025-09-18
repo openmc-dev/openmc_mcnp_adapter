@@ -42,12 +42,12 @@ _MACROBODY_FACETS = {
         3: ('bottom', True)
     },
     RPP: {
-        1: ('xmax', True),
-        2: ('xmin', False),
-        3: ('ymax', True),
-        4: ('ymin', False),
-        5: ('zmax', True),
-        6: ('zmin', False)
+        1: ('xmax', False),
+        2: ('xmin', True),
+        3: ('ymax', False),
+        4: ('ymin', True),
+        5: ('zmax', False),
+        6: ('zmin', True)
     },
     TRC: {
         1: ('cone', False),
