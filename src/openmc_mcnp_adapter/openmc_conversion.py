@@ -104,7 +104,7 @@ def rotation_matrix(v1, v2):
         return I + K * sin_angle + (K @ K) * (1 - cos_angle)
 
 
-def get_openmc_materials(materials):
+def get_openmc_materials(materials, expand_elements: bool = True):
     """Get OpenMC materials from MCNP materials
 
     Parameters
@@ -130,12 +130,12 @@ def get_openmc_materials(materials):
                 zaid = nuclide
             name, element, Z, A, metastable = get_metadata(int(zaid), 'mcnp')
             if percent < 0:
-                if A > 0:
+                if (A > 0) or (not expand_elements):
                     material.add_nuclide(name, abs(percent), 'wo')
                 else:
                     material.add_element(element, abs(percent), 'wo')
             else:
-                if A > 0:
+                if (A > 0) or (not expand_elements):
                     material.add_nuclide(name, percent, 'ao')
                 else:
                     material.add_element(element, percent, 'ao')
@@ -302,7 +302,10 @@ def get_openmc_surfaces(surfaces, data):
             cls_plane = getattr(openmc, f'{axis}Plane')
             cls_cylinder = getattr(openmc, f'{axis}Cylinder')
             cls_cone = getattr(surface_composite, f'{axis}ConeOneSided')
-            if len(coeffs) == 4:
+            if len(coeffs) == 2:
+                x1, r1 = coeffs
+                surf = cls_plane(x1, surface_id=s['id'])
+            elif len(coeffs) == 4:
                 x1, r1, x2, r2 = coeffs
                 if x1 == x2:
                     surf = cls_plane(x1, surface_id=s['id'])
@@ -882,7 +885,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
     return universes
 
 
-def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
+def mcnp_to_model(filename, merge_surfaces: bool = True, expand_elements: bool = True) -> openmc.Model:
     """Convert MCNP input to OpenMC model
 
     Parameters
@@ -901,7 +904,7 @@ def mcnp_to_model(filename, merge_surfaces: bool = True) -> openmc.Model:
 
     cells, surfaces, data = parse(filename)
 
-    openmc_materials = get_openmc_materials(data['materials'])
+    openmc_materials = get_openmc_materials(data['materials'], expand_elements)
     openmc_surfaces = get_openmc_surfaces(surfaces, data)
     openmc_universes = get_openmc_universes(cells, openmc_surfaces,
                                             openmc_materials, data)
@@ -952,14 +955,19 @@ def mcnp_to_openmc():
                         help='Remove redundant surfaces when exporting XML')
     parser.add_argument('--no-merge-surfaces', dest='merge_surfaces', action='store_false',
                         help='Do not remove redundant surfaces when exporting XML')
+    parser.add_argument('--expand-elements', action='store_true',
+                        help='Expand elements to their constituent isotopes')
+    parser.add_argument('--no-expand-elements', dest='expand_elements', action='store_false',
+                        help='Do not expand elements to their constituent isotopes')
     parser.add_argument('-o', '--output', default='model.xml',
                         help='Name for the OpenMC model XML file')
     parser.add_argument('-s', '--separate-xml', action='store_true',
                         help='Write separate XML files')
     parser.set_defaults(merge_surfaces=True)
+    parser.set_defaults(expand_elements=True)
     args = parser.parse_args()
 
-    model = mcnp_to_model(args.mcnp_filename, args.merge_surfaces)
+    model = mcnp_to_model(args.mcnp_filename, args.merge_surfaces, args.expand_elements)
     if args.separate_xml:
         model.export_to_xml()
     else:

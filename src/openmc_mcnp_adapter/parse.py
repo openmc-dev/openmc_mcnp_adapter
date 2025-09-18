@@ -5,6 +5,7 @@ from collections import defaultdict
 from copy import deepcopy
 from math import pi
 import re
+from pathlib import Path
 
 import numpy as np
 
@@ -22,6 +23,16 @@ _CELL_PARAMETERS_RE = re.compile(rf"""
     (.*?                    # Value
     (?={_ANY_KEYWORD}|\Z))  # Followed by another keyword or end-of-string
 """, re.VERBOSE
+)
+
+_READ_RE = re.compile(r"""
+    ^               # Beginning of line
+    \s*read         # Keyword
+    \s.*?file       # Everything up to filename
+    \s*=\s*         # = sign (required) with optional spaces
+    (\S+)           # The file name is anything without whitespace
+    .*              # Anything else until end-of-line
+""", re.IGNORECASE | re.VERBOSE | re.MULTILINE
 )
 
 _CELL1_RE = re.compile(r'\s*(\d+)\s+(\d+)([ \t0-9:#().dDeE\+-]+)\s*(.*)')
@@ -252,8 +263,10 @@ def parse_data(section):
     return data
 
 
-def split_mcnp(filename):
-    """Split MCNP file into three strings, one for each block
+def expand_read_cards(filename) -> str:
+    """Recursively read the MCNP input file and files referenced by READ cards
+
+    READ card keywords other than FILE are ignored.
 
     Parameters
     ----------
@@ -262,12 +275,40 @@ def split_mcnp(filename):
 
     Returns
     -------
+    str
+        Text of the MCNP input file
+
+    """
+    path = Path(filename).resolve()
+    text = path.read_text()
+    for match in _READ_RE.finditer(text):
+        card = match[0].strip()
+        # If the requested path is absolute, use it directly
+        requested = Path(match[1])
+        target = requested if requested.is_absolute() else path.parent / requested
+        if not target.is_file():
+            errstr = f"In card {repr(card)}, failed to find: {target}"
+            raise FileNotFoundError(errstr)
+        subtext = expand_read_cards(target)
+        text = text.replace(card, subtext)
+    return text
+
+
+def split_mcnp(text):
+    """Split MCNP file into three strings, one for each block
+
+    Parameters
+    ----------
+    text : str
+        Text of the MCNP input file
+
+    Returns
+    -------
     list of str
         List containing one string for each block
 
     """
     # Find beginning of cell section
-    text = open(filename, 'r').read()
     m = re.search(r'^[ \t]*(\d+)[ \t]+', text, flags=re.MULTILINE)
     text = text[m.start():]
     return re.split('\n[ \t]*\n', text)
@@ -331,8 +372,11 @@ def parse(filename):
         Dictionary containing data-block information, including materials
 
     """
+    # Read the text of the file and any referenced files into memory
+    text = expand_read_cards(filename)
+
     # Split file into main three sections (cells, surfaces, data)
-    sections = split_mcnp(filename)
+    sections = split_mcnp(text)
 
     # Sanitize lines (remove comments, continuation lines, etc.)
     cell_section = sanitize(sections[0])
