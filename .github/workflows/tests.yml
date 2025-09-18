@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           apt -y update
-          apt install -y python3-venv
+          apt install -y python3-venv curl
           python -m venv venv
           source venv/bin/activate
 
@@ -38,4 +38,10 @@ jobs:
 
       - name: Test
         shell: bash
-        run: pytest -rs tests
+        run: pytest --cov=openmc_mcnp_adapter --cov-branch --cov-report=xml -rs tests
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: openmc-dev/openmc_mcnp_adapter

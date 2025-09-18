@@ -33,7 +33,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "pytest-cov"]
 
 [project.urls]
 "Bug Tracker" = "https://github.com/openmc-dev/openmc_mcnp_adapter/issues"
