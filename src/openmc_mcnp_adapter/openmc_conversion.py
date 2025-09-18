@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 import argparse
-from math import pi
+from math import pi, isclose
 import os
 import re
 import tempfile
@@ -72,25 +72,38 @@ def rotation_matrix(v1, v2):
     3x3 rotation matrix
 
     """
-    # Normalize vectors
+    # Normalize vectors and compute cosine
     u1 = v1 / np.linalg.norm(v1)
     u2 = v2 / np.linalg.norm(v2)
-
-    # Calculate axis of rotation
-    axis = np.cross(u1, u2)
-    axis /= np.linalg.norm(axis)
+    cos_angle = float(np.clip(np.dot(u1, u2), -1.0, 1.0))
 
     I = np.identity(3)
 
     # Handle special case where vectors are parallel or anti-parallel
-    if abs(np.dot(u2, axis) - 1.0) < 1e-8:
-        return I
-    elif abs(np.dot(u2, axis) + 1.0) < 1e-8:
-        return -I
+    if isclose(abs(cos_angle), 1.0, rel_tol=1e-8):
+        if cos_angle > 0.0:
+            return I
+        else:
+            # Proper 180° rotation: rotate about any axis that is orthogonal
+            # with u1. Because |k| = 1 and cos(180°) = -1, the rotation matrix
+            # is simply K = I + 2 * (k k^T - I) = 2 k k^T - I
+
+            # Choose reference vector not parallel to u1
+            ref = np.array([1.0, 0.0, 0.0]) if abs(u1[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+
+            # Create orthogonal unit vector
+            k = np.cross(u1, ref)
+            k /= np.linalg.norm(k)
+
+            # Create rotation matrix
+            return 2.0 * np.outer(k, k) - I
     else:
         # Calculate rotation angle
-        cos_angle = np.dot(u1, u2)
         sin_angle = np.sqrt(1 - cos_angle*cos_angle)
+
+        # Calculate axis of rotation
+        axis = np.cross(u1, u2)
+        axis /= np.linalg.norm(axis)
 
         # Create cross-product matrix K
         kx, ky, kz = axis
@@ -326,20 +339,11 @@ def get_openmc_surfaces(surfaces, data):
                 raise NotImplementedError(f"{s['mnemonic']} surface with {len(coeffs)} parameters")
         elif s['mnemonic'] == 'rcc':
             vx, vy, vz, hx, hy, hz, r = coeffs
-            if hx == 0.0 and hy == 0.0:
-                if hz < 0.0:
-                    vz += hz
-                    hz = -hz
+            if hx == 0.0 and hy == 0.0 and hz > 0.0:
                 surf = RCC((vx, vy, vz), hz, r, axis='z')
-            elif hy == 0.0 and hz == 0.0:
-                if hx < 0.0:
-                    vx += hx
-                    hx = -hx
+            elif hy == 0.0 and hz == 0.0 and hx > 0.0:
                 surf = RCC((vx, vy, vz), hx, r, axis='x')
-            elif hx == 0.0 and hz == 0.0:
-                if hy < 0.0:
-                    vy += hy
-                    hy = -hy
+            elif hx == 0.0 and hz == 0.0 and hy > 0.0:
                 surf = RCC((vx, vy, vz), hy, r, axis='y')
             else:
                 # Create vectors for Z-axis and cylinder orientation
