@@ -13,7 +13,7 @@ import numpy as np
 _KEYWORDS = [
     r'\*?trcl', r'\*?fill', 'tmp', 'u', 'lat',
     'imp:.', 'vol', 'pwt', 'ext:.', 'fcl', 'wwn', 'dxc', 'nonu', 'pd',
-    'elpt', 'cosy', 'bflcl', 'unc',
+    'elpt', 'cosy', 'bflcl', 'unc', 'mat', 'rho',
     'pmt'  # D1SUNED-specific
 ]
 _ANY_KEYWORD = '|'.join(f'(?:{k})' for k in _KEYWORDS)
