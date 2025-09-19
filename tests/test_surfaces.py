@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from textwrap import dedent
 
+import numpy as np
 import openmc
 from openmc.model.surface_composite import OrthogonalBox, \
     RectangularParallelepiped, RightCircularCylinder, ConicalFrustum, \
@@ -117,6 +118,23 @@ def test_plane_sense_rule4():
     )
     surf = convert_surface("p", coeffs)
     assert (1e10, 0., 0.) in +surf
+
+
+def test_surface_transformation_with_tr_card():
+    mcnp_str = dedent("""
+    title
+    1 0 -1
+
+    1 1 pz 0.0
+
+    tr1 0.0 1.0 1.0 1.0 0.0 0.0 0.0 0.0 1.0 0.0 -1.0 0.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    surf = model.geometry.get_all_surfaces()[1]
+
+    # The transformed plane corresponds to -y + 1 = 0, so y > 1 is negative sense
+    assert (0.0, 1.1, 1.0) in -surf
+    assert (0.0, 0.9, 1.0) in +surf
 
 
 @mark.parametrize(
@@ -414,6 +432,27 @@ def test_rcc_macrobody(coeffs, expected_bottom, expected_top, r, coeff):
     assert surf.cyl.r == approx(r)
     assert surf.bottom.d / getattr(surf.bottom, coeff) == approx(expected_bottom)
     assert surf.top.d / getattr(surf.top, coeff) == approx(expected_top)
+
+
+def test_rcc_macrobody_non_axis_aligned():
+    coeffs = (0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.5)
+    surf = convert_surface("rcc", coeffs)
+    assert isinstance(surf, RightCircularCylinder)
+
+    # Points along and around the axis defined by the height vector (1, 1, 0)
+    midpoint = (0.5, 0.5, 0.0)
+    axis_unit = np.array(coeffs[3:6])
+
+    inside_point = (midpoint[0], midpoint[1], 0.1)
+    outside_radial = (midpoint[0], midpoint[1], 0.6)
+    below_bottom = -0.1 * axis_unit
+    top = np.array((1.0, 1.0, 0.0))
+    above_top = top + 0.1 * axis_unit
+
+    assert inside_point in -surf
+    assert outside_radial in +surf
+    assert below_bottom in +surf
+    assert above_top in +surf
 
 
 def test_trc_macrobody():
