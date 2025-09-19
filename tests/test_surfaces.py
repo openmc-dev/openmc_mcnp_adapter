@@ -58,7 +58,7 @@ def test_planes(mnemonic, params, expected_type, attrs):
         assert getattr(surf, attr) == approx(value)
 
 
-def test_plane_from_points():
+def test_plane_9points():
     # Points defining plane y = x - 1
     coeffs = (1.0, 0.0, 0.0,
               2.0, 1.0, 0.0,
@@ -69,6 +69,53 @@ def test_plane_from_points():
     assert surf.b == approx(-1.0)
     assert surf.c == approx(0.0)
     assert surf.d == approx(1.0)
+
+
+def test_plane_sense_rule1():
+    # In general, origin is required to have negative sense
+    coeffs = (
+        0., 1., 0.,
+        1., 1., 0.,
+        0., 1., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (0., 0., 0.) in -surf
+
+
+def test_plane_sense_rule2():
+    # If plane passes through origin, the point (0, 0, ∞) has positive sense. In
+    # this case, we use the surface x - z = 0
+    coeffs = (
+        1., 0., 1.,
+        0., 0., 0.,
+        1., 1., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (0., 0., 1e10) in +surf
+
+
+def test_plane_sense_rule3():
+    # If D = C = 0, the point (0, ∞, 0) has positive sense. In this case, we use
+    # the surface, x - y = 0
+    coeffs = (
+        0., 0., 0.,
+        1., 1., 0.,
+        0., 0., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (0., 1e10, 0.) in +surf
+
+
+def test_plane_sense_rule4():
+    # If D = C = B = 0, the point (∞, 0, 0) has positive sense. In this case, we
+    # use the surface x = 0
+    coeffs = (
+        0., 1., 1.,
+        0., 0., 0.,
+        0., 0., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (1e10, 0., 0.) in +surf
 
 
 @mark.parametrize(
