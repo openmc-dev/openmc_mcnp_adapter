@@ -95,3 +95,17 @@ def test_atom_density():
     assert sum(nuclide_densities.values()) == approx(0.02)
     assert nuclide_densities['Li6'] == approx(0.01)
     assert nuclide_densities['Li7'] == approx(0.01)
+
+
+def test_density_no_whitespace():
+    mcnp_model = textwrap.dedent("""
+        title
+        1  1 -4.5( -1 )
+
+        1  px 0.0
+
+        m1  1001.80c  2.0
+    """)
+    model = mcnp_str_to_model(mcnp_model)
+    m = model.materials[0]
+    assert m.get_mass_density() == approx(4.5)
