@@ -5,7 +5,6 @@ import openmc
 from openmc.model.surface_composite import OrthogonalBox, \
     RectangularParallelepiped, RightCircularCylinder, ConicalFrustum
 from openmc_mcnp_adapter import mcnp_str_to_model, get_openmc_surfaces
-import pytest
 from pytest import approx, mark
 
 
@@ -239,21 +238,25 @@ def test_rpp_macrobody():
 
 
 @mark.parametrize(
-    "coeffs, expected_bottom_z, expected_top_z, r",
+    "coeffs, expected_bottom, expected_top, r, coeff",
     [
-        # Base at (0,0,0), height +5 along z
-        ((0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 1.5), 0.0, 5.0, 1.5),
-        # Negative height vector should be flipped internally (known failing behavior)
-        pytest.param((0.0, 0.0, 0.0, 0.0, 0.0, -5.0, 1.0), 0.0, -5.0, 1.0,
-                     marks=pytest.mark.xfail(reason="Negative height handling currently broken", strict=False)),
+        # Base at (0,0,0), positive/negative height along x
+        ((0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 1.5), 0.0, 5.0, 1.5, 'a'),
+        ((0.0, 0.0, 0.0, -5.0, 0.0, 0.0, 1.0), 0.0, -5.0, 1.0, 'a'),
+        # Base at (0,0,0), positive/negative height along y
+        ((0.0, 0.0, 0.0, 0.0, 5.0, 0.0, 1.5), 0.0, 5.0, 1.5, 'b'),
+        ((0.0, 0.0, 0.0, 0.0, -5.0, 0.0, 1.0), 0.0, -5.0, 1.0, 'b'),
+        # Base at (0,0,0), positive/negative height along z
+        ((0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 1.5), 0.0, 5.0, 1.5, 'c'),
+        ((0.0, 0.0, 0.0, 0.0, 0.0, -5.0, 1.0), 0.0, -5.0, 1.0, 'c'),
     ],
 )
-def test_rcc_macrobody(coeffs, expected_bottom_z, expected_top_z, r):
+def test_rcc_macrobody(coeffs, expected_bottom, expected_top, r, coeff):
     surf = convert_surface("rcc", coeffs)
     assert isinstance(surf, RightCircularCylinder)
     assert surf.cyl.r == approx(r)
-    assert surf.bottom.d / surf.bottom.c == approx(expected_bottom_z)
-    assert surf.top.d / surf.top.c == approx(expected_top_z)
+    assert surf.bottom.d / getattr(surf.bottom, coeff) == approx(expected_bottom)
+    assert surf.top.d / getattr(surf.top, coeff) == approx(expected_top)
 
 
 def test_trc_macrobody():
