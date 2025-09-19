@@ -46,6 +46,8 @@ _MODE_RE = re.compile(r'\s*mode(?:\s+\S+)*')
 _COMPLEMENT_RE = re.compile(r'(#)[ ]*(\d+)')
 _NUM_RE = re.compile(r'(\d)([+-])(\d)')
 
+_HAS_REPEAT_RE = re.compile(r'\b\d+[rR]\b')
+
 _REPEAT_RE = re.compile(r"""
     (?P<value>                  # The numeric value to be repeated
       [+-]?                     #   Optional sign
@@ -364,10 +366,11 @@ def sanitize(section: str) -> str:
     section = re.sub('\n {5}', ' ', section)
 
     # Expand repeated numbers
-    section = _REPEAT_RE.sub(
-        lambda m: ' '.join([m.group('value')] * (int(m.group('count')) + 1)),
-        section,
-    )
+    if _HAS_REPEAT_RE.search(section):
+        section = _REPEAT_RE.sub(
+            lambda m: ' '.join([m.group('value')] * (int(m.group('count')) + 1)),
+            section,
+        )
 
     return section
 
