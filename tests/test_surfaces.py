@@ -3,7 +3,8 @@ from textwrap import dedent
 
 import openmc
 from openmc.model.surface_composite import OrthogonalBox, \
-    RectangularParallelepiped, RightCircularCylinder, ConicalFrustum
+    RectangularParallelepiped, RightCircularCylinder, ConicalFrustum, \
+    XConeOneSided, YConeOneSided, ZConeOneSided
 from openmc_mcnp_adapter import mcnp_str_to_model, get_openmc_surfaces
 from pytest import approx, mark
 
@@ -286,6 +287,51 @@ def test_axisymmetric_surfaces(mnemonic, params, expected_type, attr, value):
     surf = convert_surface(mnemonic, params)
     assert isinstance(surf, expected_type)
     assert getattr(surf, attr) == approx(value)
+
+
+@mark.parametrize(
+    "mnemonic, params, expected_type, up_expected",
+    [
+        # k/x with one-sided flag: +1 -> up=True, -1 -> up=False
+        ("k/x", (0.0, 0.0, 0.0, 1.0, 1.0), XConeOneSided, True),
+        ("k/x", (0.0, 0.0, 0.0, 2.5, -1.0), XConeOneSided, False),
+        ("k/y", (1.0, -2.0, 3.0, 0.5, 1.0), YConeOneSided, True),
+        ("k/z", (-1.0, 2.0, -3.0, 4.0, -2.0), ZConeOneSided, False),
+    ],
+)
+def test_cones_one_sided(mnemonic, params, expected_type, up_expected):
+    surf = convert_surface(mnemonic, params)
+    assert isinstance(surf, expected_type)
+    assert getattr(surf, "up") is up_expected
+    # Access nested cone attributes for center and r2
+    assert surf.cone.x0 == approx(params[0])
+    assert surf.cone.y0 == approx(params[1])
+    assert surf.cone.z0 == approx(params[2])
+    assert surf.cone.r2 == approx(params[3])
+
+
+@mark.parametrize(
+    "mnemonic, params, expected_type, up_expected",
+    [
+        ("kx", (0.5, 2.0,  1.0), XConeOneSided, True),
+        ("kx", (0.5, 2.0, -1.0), XConeOneSided, False),
+        ("ky", (-0.3, 1.2,  2.0), YConeOneSided, True),
+        ("ky", (-0.3, 1.2, -2.0), YConeOneSided, False),
+        ("kz", (2.2, 0.7,  3.0), ZConeOneSided, True),
+        ("kz", (2.2, 0.7, -3.0), ZConeOneSided, False),
+    ],
+)
+def test_cones_one_sided_short(mnemonic, params, expected_type, up_expected):
+    surf = convert_surface(mnemonic, params)
+    assert isinstance(surf, expected_type)
+    assert getattr(surf, "up") is up_expected
+
+    # Check plane position coincides with axis center value
+    axis = mnemonic[1]  # 'x', 'y', or 'z'
+    assert getattr(surf.plane, f"{axis}0") == approx(params[0])
+
+    # Check cone radius-squared parameter
+    assert surf.cone.r2 == approx(params[1])
 
 
 def test_box_macrobody():
