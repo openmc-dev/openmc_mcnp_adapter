@@ -28,6 +28,20 @@ def convert_surface(mnemonic: str, params: Sequence[float]) -> openmc.Surface:
     return surfaces[1]
 
 
+def test_reflective_surface():
+    mcnp_str = dedent("""
+    title
+    1  1.0 -1
+
+    *1  so 2.0
+
+    m1   1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    surf = model.geometry.get_all_surfaces()[1]
+    assert surf.boundary_type == 'reflective'
+
+
 @mark.parametrize(
     "mnemonic, params, expected_type, attrs",
     [
