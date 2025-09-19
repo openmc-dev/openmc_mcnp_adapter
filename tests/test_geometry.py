@@ -1,6 +1,6 @@
 from textwrap import dedent
 
-from pytest import mark, approx
+from pytest import mark, approx, param
 from openmc_mcnp_adapter import mcnp_str_to_model
 
 
@@ -55,3 +55,81 @@ def test_likenbut():
     assert (0.0, 0.0, 0.0) not in cell.region
     assert (2.0, 0.9, 0.0) in cell.region
     assert (2.0, 1.1, 0.0) not in cell.region
+
+
+@mark.parametrize(
+    "cell_card, surface_cards, points_inside, points_outside",
+    [
+        (
+            "1   1 -1.0  -1 TRCL=(2.0 0.0 0.0)",
+            ("1   so 1.0",),
+            [
+                (2.0, 0.0, 0.0),
+                (2.0, 0.9, 0.0),
+                (2.0, 0.0, 0.9),
+            ],
+            [
+                (0.9, 0.0, 0.0),
+                (2.0, 1.1, 0.0),
+                (2.0, 0.0, 1.1),
+            ],
+        ),
+        (
+            "1 0 -1 TRCL=(1.0 0.0 0.0 0.0 -1.0 0.0 1.0 0.0 0.0 0.0 0.0 1.0)",
+            ("1 rpp -0.5 0.5 -0.25 0.25 -0.1 0.1",),
+            [
+                (1.0, 0.0, 0.0),
+                (1.2, 0.0, 0.0),
+                (1.0, 0.4, 0.0),
+                (1.0, -0.4, 0.0),
+            ],
+            [
+                (0.7, 0.0, 0.0),
+                (1.3, 0.0, 0.0),
+                (1.0, 0.6, 0.0),
+                (1.0, 0.0, 0.2),
+            ],
+        ),
+        (
+            "1 0 -1 *TRCL=(1.0 0.0 0.0 90.0 180.0 90.0 0.0 90.0 90.0 90.0 90.0 0.0)",
+            ("1 rpp -0.5 0.5 -0.25 0.25 -0.1 0.1",),
+            [
+                (1.0, 0.0, 0.0),
+                (1.2, 0.0, 0.0),
+                (1.0, 0.4, 0.0),
+                (1.0, -0.4, 0.0),
+            ],
+            [
+                (0.7, 0.0, 0.0),
+                (1.3, 0.0, 0.0),
+                (1.0, 0.6, 0.0),
+                (1.0, 0.0, 0.2),
+            ],
+        ),
+        param(
+            "1 0 -1 TRCL=(0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 -1)",
+            ("1 rpp -0.5 0.5 -0.25 0.25 -0.1 0.1",),
+            [],
+            [],
+            marks=mark.xfail(reason="13-parameter TRCL not yet supported"),
+        ),
+    ],
+)
+def test_trcl(cell_card, surface_cards, points_inside, points_outside):
+    surface_block = "\n".join(surface_cards)
+    mcnp_str = dedent(f"""
+    title
+    {cell_card}
+
+    {surface_block}
+
+    m1   1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    cell = model.geometry.get_all_cells()[1]
+
+    for point in points_inside:
+        assert point in cell.region
+
+    for point in points_outside:
+        assert point not in cell.region
