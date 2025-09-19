@@ -536,6 +536,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
             # Apply transformation to fill
             if 'fill' in c['parameters']:
+                # TODO: Check for existing transformations on the fill
                 fill = c['parameters']['fill']
                 if use_degrees:
                     c['parameters']['*fill'] = f'{fill} {trcl}'
