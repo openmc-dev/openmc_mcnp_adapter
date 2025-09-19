@@ -1,6 +1,7 @@
 # MCNP Conversion Tools for OpenMC
 
 [![License](https://img.shields.io/badge/license-MIT-green)](https://opensource.org/licenses/MIT)
+[![codecov](https://codecov.io/github/openmc-dev/openmc_mcnp_adapter/graph/badge.svg?token=KX00MQ57G5)](https://codecov.io/github/openmc-dev/openmc_mcnp_adapter)
 
 This repository provides tools for parsing/converting MCNP models to OpenMC
 classes and/or XML files. To install these tools, run:
