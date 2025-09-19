@@ -63,6 +63,9 @@ def test_plane_from_points():
         ("so", (2.4,)),
         ("s", (1.0, -2.0, 3.0, 4.5)),
         ("sph", (1.0, -2.0, 3.0, 4.5)),
+        ("sx", (2.0, 1.5)),
+        ("sy", (9.0, 0.5)),
+        ("sz", (-4.0, 4.0)),
     ],
 )
 def test_spheres(mnemonic, params):
@@ -75,13 +78,28 @@ def test_spheres(mnemonic, params):
         assert surf.x0 == 0.0
         assert surf.y0 == 0.0
         assert surf.z0 == 0.0
-        assert surf.r  == approx(r)
+    elif mnemonic in ("sx", "sy", "sz"):
+        center, r = params
+        if mnemonic == "sx":
+            assert surf.x0 == approx(center)
+            assert surf.y0 == 0.0
+            assert surf.z0 == 0.0
+        elif mnemonic == "sy":
+            assert surf.x0 == 0.0
+            assert surf.y0 == approx(center)
+            assert surf.z0 == 0.0
+        else:
+            assert surf.x0 == 0.0
+            assert surf.y0 == 0.0
+            assert surf.z0 == approx(center)
     else:
         x0, y0, z0, r = params
         assert surf.x0 == approx(x0)
         assert surf.y0 == approx(y0)
         assert surf.z0 == approx(z0)
-        assert surf.r  == approx(r)
+
+    # Check radius
+    assert surf.r  == approx(r)
 
 
 @mark.parametrize(
