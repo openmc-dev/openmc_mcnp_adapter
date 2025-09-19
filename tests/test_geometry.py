@@ -133,3 +133,25 @@ def test_trcl(cell_card, surface_cards, points_inside, points_outside):
 
     for point in points_outside:
         assert point not in cell.region
+
+
+def test_trcl_fill():
+    mcnp_str = dedent("""
+    title
+    1 0 -1 FILL=10 TRCL=(2.0 0.0 0.0)
+    2 0 -2 U=10
+    3 0 +2 U=10
+
+    1 so 10.0
+    2 so 1.0
+
+    m1   1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    geometry = model.geometry
+    cells = geometry.get_all_cells()
+
+    # Make sure that the cells in universe 10 were shifted
+    assert geometry.find((2.0, 0.0, 0.0))[-1] is cells[2]
+    assert geometry.find((4.0, 0.0, 0.0))[-1] is cells[3]
+    assert geometry.find((0.0, 0.0, 0.0))[-1] is cells[3]
