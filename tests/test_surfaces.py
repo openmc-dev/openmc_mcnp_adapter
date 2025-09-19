@@ -289,6 +289,38 @@ def test_axisymmetric_surfaces(mnemonic, params, expected_type, attr, value):
     assert getattr(surf, attr) == approx(value)
 
 
+@mark.parametrize("mnemonic", ["x", "y", "z"])
+def test_axisymmetric_surfaces_cone(mnemonic):
+    # cone with a r=1 bottom at plane=0 and a r=2 top at plane=3
+    coeffs = (0.0, 1.0, 3.0, 2.0)
+    surf = convert_surface(mnemonic, coeffs)
+
+    # Helper to build a point (x,y,z) given radial distance r and axial coord a
+    def pt(r: float, a: float):
+        if mnemonic == "x":
+            return (a, r, 0.0)   # axial along x; radius in y
+        elif mnemonic == "y":
+            return (r, a, 0.0)   # axial along y; radius in x
+        else:  # "z"
+            return (r, 0.0, a)   # axial along z; radius in x
+
+    # Points near the r=1 slice (at axial ~ 0)
+    assert pt(0.0, 0.01) in -surf
+    assert pt(0.0, -0.01) in -surf
+    assert pt(0.99, 0.01) in -surf
+    assert pt(1.05, 0.01) in +surf
+
+    # Points near the r=2 slice (at axial ~ 3)
+    assert pt(1.99, 2.99) in -surf
+    assert pt(2.0, 2.99) in +surf
+    assert pt(0.0, 2.99) in -surf
+    assert pt(0.0, 3.01) in -surf
+
+    # Points between the r=1 and r=2 slices (at axial = 1.5)
+    assert pt(1.49, 1.5) in -surf
+    assert pt(1.51, 1.5) in +surf
+
+
 @mark.parametrize(
     "mnemonic, params, expected_type, up_expected",
     [

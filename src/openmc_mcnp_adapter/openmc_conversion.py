@@ -334,7 +334,8 @@ def get_openmc_surfaces(surfaces, data):
                     # decide if we want the up or down part of the
                     # cone since one sheet is used
                     up = grad >= 0
-                    surf = cls_cone(z0=offset, r2=angle, up=up)
+                    kwargs = {f"{s['mnemonic']}0": offset, "r2": angle, "up": up}
+                    surf = cls_cone(**kwargs)
             else:
                 raise NotImplementedError(f"{s['mnemonic']} surface with {len(coeffs)} parameters")
         elif s['mnemonic'] == 'rcc':
