@@ -919,13 +919,13 @@ def mcnp_to_model(filename, merge_surfaces: bool = True, expand_elements: bool =
     return openmc.Model(geometry, materials, settings)
 
 
-def mcnp_str_to_model(text: str, merge_surfaces: bool = True):
+def mcnp_str_to_model(text: str, **kwargs):
     # Write string to a temporary file
     with tempfile.NamedTemporaryFile('w', delete=False) as fp:
         fp.write(text)
 
     # Parse model from file
-    model = mcnp_to_model(fp.name, merge_surfaces)
+    model = mcnp_to_model(fp.name, **kwargs)
 
     # Remove temporary file and return model
     os.remove(fp.name)
