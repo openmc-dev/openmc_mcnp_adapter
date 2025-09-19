@@ -13,7 +13,7 @@ import numpy as np
 _KEYWORDS = [
     r'\*?trcl', r'\*?fill', 'tmp', 'u', 'lat',
     'imp:.', 'vol', 'pwt', 'ext:.', 'fcl', 'wwn', 'dxc', 'nonu', 'pd',
-    'elpt', 'cosy', 'bflcl', 'unc',
+    'elpt', 'cosy', 'bflcl', 'unc', 'mat', 'rho',
     'pmt'  # D1SUNED-specific
 ]
 _ANY_KEYWORD = '|'.join(f'(?:{k})' for k in _KEYWORDS)
@@ -44,8 +44,28 @@ _TR_RE = re.compile(r'\s*(\*)?[Tt][Rr](\d+)\s+(.*)')
 _SAB_RE = re.compile(r'\s*[Mm][Tt](\d+)((?:\s+\S+)+)')
 _MODE_RE = re.compile(r'\s*mode(?:\s+\S+)*')
 _COMPLEMENT_RE = re.compile(r'(#)[ ]*(\d+)')
-_REPEAT_RE = re.compile(r'(\d+)\s+(\d+)[rR]')
 _NUM_RE = re.compile(r'(\d)([+-])(\d)')
+
+_HAS_REPEAT_RE = re.compile(r'\b\d+[rR]\b')
+
+_REPEAT_RE = re.compile(r"""
+    (?P<value>                  # The numeric value to be repeated
+      [+-]?                     #   Optional sign
+      (?:                       #   Mantissa
+        \d+(?:\.\d*)?           #     Digits with optional fractional part (e.g., 3 or 3. or 3.0)
+        |                       #     or
+        \.\d+                   #     Leading-dot form (e.g., .25)
+      )
+      (?:                       #   Optional exponent
+        [eEdD][+-]?\d+          #     E/D exponent with optional sign (e.g., 1e-3, 2D+3)
+        |                       #     or MCNP "bare" exponent without E/D
+        [+-]\d+                 #     appended sign+digits (e.g., 1.0-3 -> 1.0e-3)
+      )?
+    )
+    \s+                         # One or more spaces between value and count
+    (?P<count>\d+)              # The repeat count
+    [rR]                        # The 'R' or 'r' suffix
+""", re.VERBOSE)
 
 
 def float_(val):
@@ -346,11 +366,12 @@ def sanitize(section: str) -> str:
     section = re.sub('\n {5}', ' ', section)
 
     # Expand repeated numbers
-    m = _REPEAT_RE.search(section)
-    while m is not None:
-        section = _REPEAT_RE.sub(' '.join((int(m.group(2)) + 1)*[m.group(1)]),
-                                 section, 1)
-        m = _REPEAT_RE.search(section)
+    if _HAS_REPEAT_RE.search(section):
+        section = _REPEAT_RE.sub(
+            lambda m: ' '.join([m.group('value')] * (int(m.group('count')) + 1)),
+            section,
+        )
+
     return section
 
 

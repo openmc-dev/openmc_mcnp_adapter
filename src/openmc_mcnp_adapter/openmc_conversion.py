@@ -334,7 +334,8 @@ def get_openmc_surfaces(surfaces, data):
                     # decide if we want the up or down part of the
                     # cone since one sheet is used
                     up = grad >= 0
-                    surf = cls_cone(z0=offset, r2=angle, up=up)
+                    kwargs = {f"{s['mnemonic']}0": offset, "r2": angle, "up": up}
+                    surf = cls_cone(**kwargs)
             else:
                 raise NotImplementedError(f"{s['mnemonic']} surface with {len(coeffs)} parameters")
         elif s['mnemonic'] == 'rcc':
@@ -919,13 +920,13 @@ def mcnp_to_model(filename, merge_surfaces: bool = True, expand_elements: bool =
     return openmc.Model(geometry, materials, settings)
 
 
-def mcnp_str_to_model(text: str, merge_surfaces: bool = True):
+def mcnp_str_to_model(text: str, **kwargs):
     # Write string to a temporary file
     with tempfile.NamedTemporaryFile('w', delete=False) as fp:
         fp.write(text)
 
     # Parse model from file
-    model = mcnp_to_model(fp.name, merge_surfaces)
+    model = mcnp_to_model(fp.name, **kwargs)
 
     # Remove temporary file and return model
     os.remove(fp.name)

@@ -1,9 +1,11 @@
 from collections.abc import Sequence
 from textwrap import dedent
 
+import numpy as np
 import openmc
 from openmc.model.surface_composite import OrthogonalBox, \
-    RectangularParallelepiped, RightCircularCylinder, ConicalFrustum
+    RectangularParallelepiped, RightCircularCylinder, ConicalFrustum, \
+    XConeOneSided, YConeOneSided, ZConeOneSided
 from openmc_mcnp_adapter import mcnp_str_to_model, get_openmc_surfaces
 from pytest import approx, mark
 
@@ -28,6 +30,20 @@ def convert_surface(mnemonic: str, params: Sequence[float]) -> openmc.Surface:
     return surfaces[1]
 
 
+def test_reflective_surface():
+    mcnp_str = dedent("""
+    title
+    1  1.0 -1
+
+    *1  so 2.0
+
+    m1   1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    surf = model.geometry.get_all_surfaces()[1]
+    assert surf.boundary_type == 'reflective'
+
+
 @mark.parametrize(
     "mnemonic, params, expected_type, attrs",
     [
@@ -44,7 +60,7 @@ def test_planes(mnemonic, params, expected_type, attrs):
         assert getattr(surf, attr) == approx(value)
 
 
-def test_plane_from_points():
+def test_plane_9points():
     # Points defining plane y = x - 1
     coeffs = (1.0, 0.0, 0.0,
               2.0, 1.0, 0.0,
@@ -57,12 +73,79 @@ def test_plane_from_points():
     assert surf.d == approx(1.0)
 
 
+def test_plane_sense_rule1():
+    # In general, origin is required to have negative sense
+    coeffs = (
+        0., 1., 0.,
+        1., 1., 0.,
+        0., 1., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (0., 0., 0.) in -surf
+
+
+def test_plane_sense_rule2():
+    # If plane passes through origin, the point (0, 0, ∞) has positive sense. In
+    # this case, we use the surface x - z = 0
+    coeffs = (
+        1., 0., 1.,
+        0., 0., 0.,
+        1., 1., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (0., 0., 1e10) in +surf
+
+
+def test_plane_sense_rule3():
+    # If D = C = 0, the point (0, ∞, 0) has positive sense. In this case, we use
+    # the surface, x - y = 0
+    coeffs = (
+        0., 0., 0.,
+        1., 1., 0.,
+        0., 0., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (0., 1e10, 0.) in +surf
+
+
+def test_plane_sense_rule4():
+    # If D = C = B = 0, the point (∞, 0, 0) has positive sense. In this case, we
+    # use the surface x = 0
+    coeffs = (
+        0., 1., 1.,
+        0., 0., 0.,
+        0., 0., 1.
+    )
+    surf = convert_surface("p", coeffs)
+    assert (1e10, 0., 0.) in +surf
+
+
+def test_surface_transformation_with_tr_card():
+    mcnp_str = dedent("""
+    title
+    1 0 -1
+
+    1 1 pz 0.0
+
+    tr1 0.0 1.0 1.0 1.0 0.0 0.0 0.0 0.0 1.0 0.0 -1.0 0.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    surf = model.geometry.get_all_surfaces()[1]
+
+    # The transformed plane corresponds to -y + 1 = 0, so y > 1 is negative sense
+    assert (0.0, 1.1, 1.0) in -surf
+    assert (0.0, 0.9, 1.0) in +surf
+
+
 @mark.parametrize(
     "mnemonic, params",
     [
         ("so", (2.4,)),
         ("s", (1.0, -2.0, 3.0, 4.5)),
         ("sph", (1.0, -2.0, 3.0, 4.5)),
+        ("sx", (2.0, 1.5)),
+        ("sy", (9.0, 0.5)),
+        ("sz", (-4.0, 4.0)),
     ],
 )
 def test_spheres(mnemonic, params):
@@ -75,13 +158,28 @@ def test_spheres(mnemonic, params):
         assert surf.x0 == 0.0
         assert surf.y0 == 0.0
         assert surf.z0 == 0.0
-        assert surf.r  == approx(r)
+    elif mnemonic in ("sx", "sy", "sz"):
+        center, r = params
+        if mnemonic == "sx":
+            assert surf.x0 == approx(center)
+            assert surf.y0 == 0.0
+            assert surf.z0 == 0.0
+        elif mnemonic == "sy":
+            assert surf.x0 == 0.0
+            assert surf.y0 == approx(center)
+            assert surf.z0 == 0.0
+        else:
+            assert surf.x0 == 0.0
+            assert surf.y0 == 0.0
+            assert surf.z0 == approx(center)
     else:
         x0, y0, z0, r = params
         assert surf.x0 == approx(x0)
         assert surf.y0 == approx(y0)
         assert surf.z0 == approx(z0)
-        assert surf.r  == approx(r)
+
+    # Check radius
+    assert surf.r  == approx(r)
 
 
 @mark.parametrize(
@@ -209,6 +307,83 @@ def test_axisymmetric_surfaces(mnemonic, params, expected_type, attr, value):
     assert getattr(surf, attr) == approx(value)
 
 
+@mark.parametrize("mnemonic", ["x", "y", "z"])
+def test_axisymmetric_surfaces_cone(mnemonic):
+    # cone with a r=1 bottom at plane=0 and a r=2 top at plane=3
+    coeffs = (0.0, 1.0, 3.0, 2.0)
+    surf = convert_surface(mnemonic, coeffs)
+
+    # Helper to build a point (x,y,z) given radial distance r and axial coord a
+    def pt(r: float, a: float):
+        if mnemonic == "x":
+            return (a, r, 0.0)   # axial along x; radius in y
+        elif mnemonic == "y":
+            return (r, a, 0.0)   # axial along y; radius in x
+        else:  # "z"
+            return (r, 0.0, a)   # axial along z; radius in x
+
+    # Points near the r=1 slice (at axial ~ 0)
+    assert pt(0.0, 0.01) in -surf
+    assert pt(0.0, -0.01) in -surf
+    assert pt(0.99, 0.01) in -surf
+    assert pt(1.05, 0.01) in +surf
+
+    # Points near the r=2 slice (at axial ~ 3)
+    assert pt(1.99, 2.99) in -surf
+    assert pt(2.0, 2.99) in +surf
+    assert pt(0.0, 2.99) in -surf
+    assert pt(0.0, 3.01) in -surf
+
+    # Points between the r=1 and r=2 slices (at axial = 1.5)
+    assert pt(1.49, 1.5) in -surf
+    assert pt(1.51, 1.5) in +surf
+
+
+@mark.parametrize(
+    "mnemonic, params, expected_type, up_expected",
+    [
+        # k/x with one-sided flag: +1 -> up=True, -1 -> up=False
+        ("k/x", (0.0, 0.0, 0.0, 1.0, 1.0), XConeOneSided, True),
+        ("k/x", (0.0, 0.0, 0.0, 2.5, -1.0), XConeOneSided, False),
+        ("k/y", (1.0, -2.0, 3.0, 0.5, 1.0), YConeOneSided, True),
+        ("k/z", (-1.0, 2.0, -3.0, 4.0, -2.0), ZConeOneSided, False),
+    ],
+)
+def test_cones_one_sided(mnemonic, params, expected_type, up_expected):
+    surf = convert_surface(mnemonic, params)
+    assert isinstance(surf, expected_type)
+    assert getattr(surf, "up") is up_expected
+    # Access nested cone attributes for center and r2
+    assert surf.cone.x0 == approx(params[0])
+    assert surf.cone.y0 == approx(params[1])
+    assert surf.cone.z0 == approx(params[2])
+    assert surf.cone.r2 == approx(params[3])
+
+
+@mark.parametrize(
+    "mnemonic, params, expected_type, up_expected",
+    [
+        ("kx", (0.5, 2.0,  1.0), XConeOneSided, True),
+        ("kx", (0.5, 2.0, -1.0), XConeOneSided, False),
+        ("ky", (-0.3, 1.2,  2.0), YConeOneSided, True),
+        ("ky", (-0.3, 1.2, -2.0), YConeOneSided, False),
+        ("kz", (2.2, 0.7,  3.0), ZConeOneSided, True),
+        ("kz", (2.2, 0.7, -3.0), ZConeOneSided, False),
+    ],
+)
+def test_cones_one_sided_short(mnemonic, params, expected_type, up_expected):
+    surf = convert_surface(mnemonic, params)
+    assert isinstance(surf, expected_type)
+    assert getattr(surf, "up") is up_expected
+
+    # Check plane position coincides with axis center value
+    axis = mnemonic[1]  # 'x', 'y', or 'z'
+    assert getattr(surf.plane, f"{axis}0") == approx(params[0])
+
+    # Check cone radius-squared parameter
+    assert surf.cone.r2 == approx(params[1])
+
+
 def test_box_macrobody():
     coeffs = (0.0, 0.0, 0.0,
               1.0, 0.0, 0.0,
@@ -257,6 +432,27 @@ def test_rcc_macrobody(coeffs, expected_bottom, expected_top, r, coeff):
     assert surf.cyl.r == approx(r)
     assert surf.bottom.d / getattr(surf.bottom, coeff) == approx(expected_bottom)
     assert surf.top.d / getattr(surf.top, coeff) == approx(expected_top)
+
+
+def test_rcc_macrobody_non_axis_aligned():
+    coeffs = (0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.5)
+    surf = convert_surface("rcc", coeffs)
+    assert isinstance(surf, RightCircularCylinder)
+
+    # Points along and around the axis defined by the height vector (1, 1, 0)
+    midpoint = (0.5, 0.5, 0.0)
+    axis_unit = np.array(coeffs[3:6])
+
+    inside_point = (midpoint[0], midpoint[1], 0.1)
+    outside_radial = (midpoint[0], midpoint[1], 0.6)
+    below_bottom = -0.1 * axis_unit
+    top = np.array((1.0, 1.0, 0.0))
+    above_top = top + 0.1 * axis_unit
+
+    assert inside_point in -surf
+    assert outside_radial in +surf
+    assert below_bottom in +surf
+    assert above_top in +surf
 
 
 def test_trc_macrobody():
