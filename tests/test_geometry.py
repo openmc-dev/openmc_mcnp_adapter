@@ -135,17 +135,32 @@ def test_trcl(cell_card, surface_cards, points_inside, points_outside):
         assert point not in cell.region
 
 
-def test_trcl_fill():
-    mcnp_str = dedent("""
+@mark.parametrize(
+    "keywords",
+    [
+        "FILL=10 TRCL=(2.0 0.0 0.0)",
+        "FILL=10(2.0 0.0 0.0)",
+        "FILL=10 TRCL=(2.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0)",
+        "FILL=10(2.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0)",
+        "FILL=10 *TRCL=(2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0)",
+        "*FILL=10(2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0)",
+        "FILL=10(1)",
+        "FILL=10(2)",
+    ]
+)
+def test_fill_transformation(keywords):
+    mcnp_str = dedent(f"""
     title
-    1 0 -1 FILL=10 TRCL=(2.0 0.0 0.0)
+    1 0 -1 {keywords}
     2 0 -2 U=10
     3 0 +2 U=10
 
     1 so 10.0
     2 so 1.0
 
-    m1   1001.80c  1.0
+    m1     1001.80c  1.0
+    tr1    2.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
+    *tr2   2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0
     """)
     model = mcnp_str_to_model(mcnp_str)
     geometry = model.geometry
