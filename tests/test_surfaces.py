@@ -7,7 +7,7 @@ from openmc.model.surface_composite import OrthogonalBox, \
     RectangularParallelepiped, RightCircularCylinder, ConicalFrustum, \
     XConeOneSided, YConeOneSided, ZConeOneSided
 from openmc_mcnp_adapter import mcnp_str_to_model, get_openmc_surfaces
-from pytest import approx, mark
+from pytest import approx, mark, raises
 
 
 def convert_surface(mnemonic: str, params: Sequence[float]) -> openmc.Surface:
@@ -118,6 +118,16 @@ def test_plane_sense_rule4():
     )
     surf = convert_surface("p", coeffs)
     assert (1e10, 0., 0.) in +surf
+
+
+def test_plane_invalid():
+    coeffs = (
+        0., 0., 0.,
+        0., 0., 1.,
+        0., 0., 2.,
+    )
+    with raises(ValueError):
+        convert_surface("p", coeffs)
 
 
 def test_surface_transformation_with_tr_card():
@@ -398,6 +408,21 @@ def test_box_macrobody():
     assert surf.ax2_max.d / surf.ax2_max.b == approx(2.0)
     assert surf.ax3_min.d / surf.ax3_min.c == approx(0.0)
     assert surf.ax3_max.d / surf.ax3_max.c == approx(3.0)
+
+
+def test_box_macrobody_inf():
+    coeffs = (0.0, 0.0, 0.0,
+              1.0, 0.0, 0.0,
+              0.0, 2.0, 0.0)
+    surf = convert_surface("box", coeffs)
+    assert isinstance(surf, OrthogonalBox)
+
+    # Check a few points; since it is infinite in z, any value in z should work
+    assert (0.5, 0.5, 0.0) in -surf
+    assert (0.5, 0.5, -100.0) in -surf
+    assert (0.5, 0.5, 100.0) in -surf
+    assert (0.5, -0.01, 0.0) in +surf
+    assert (1.01, 0.5, 0.0) in +surf
 
 
 def test_rpp_macrobody():
