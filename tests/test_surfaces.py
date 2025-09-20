@@ -30,18 +30,45 @@ def convert_surface(mnemonic: str, params: Sequence[float]) -> openmc.Surface:
     return surfaces[1]
 
 
-def test_reflective_surface():
-    mcnp_str = dedent("""
+@mark.parametrize(
+    "prefix, boundary_type",
+    [
+        ("*", "reflective"),
+        ("+", "white"),
+    ]
+)
+def test_boundary_conditions(prefix, boundary_type):
+    mcnp_str = dedent(f"""
     title
-    1  1.0 -1
+    1  1 1.0 -1
 
-    *1  so 2.0
+    {prefix}1  so 2.0
 
     m1   1001.80c  1.0
     """)
     model = mcnp_str_to_model(mcnp_str)
     surf = model.geometry.get_all_surfaces()[1]
-    assert surf.boundary_type == 'reflective'
+    assert surf.boundary_type == boundary_type
+
+
+def test_boundary_periodic():
+    mcnp_str = dedent("""
+    title
+    1  1  1.0 1 -2 imp:n=1
+    2  0     -1:2  imp:n=0
+
+    1 -2  pz -10.0
+    2 -1  pz  10.0
+
+    m1   1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    surf1 = model.geometry.get_all_surfaces()[1]
+    surf2 = model.geometry.get_all_surfaces()[2]
+    assert surf1.boundary_type == 'periodic'
+    assert surf1.periodic_surface == surf2
+    assert surf2.boundary_type == 'periodic'
+    assert surf2.periodic_surface == surf1
 
 
 @mark.parametrize(

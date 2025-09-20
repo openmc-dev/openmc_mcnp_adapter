@@ -382,8 +382,14 @@ def get_openmc_surfaces(surfaces, data):
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
 
-        if s['reflective']:
+        # Set boundary conditions
+        boundary = s.get('boundary')
+        if boundary == 'reflective':
             surf.boundary_type = 'reflective'
+        elif boundary == 'white':
+            surf.boundary_type = 'white'
+        elif boundary == 'periodic':
+            surf.boundary_type = 'periodic'
 
         if 'tr' in s:
             tr_num = s['tr']
@@ -399,6 +405,12 @@ def get_openmc_surfaces(surfaces, data):
         # For macrobodies, we also need to add generated surfaces to dictionary
         if isinstance(surf, surface_composite.CompositeSurface):
             openmc_surfaces.update((-surf).get_surfaces())
+
+    # Make another pass to set periodic surfaces
+    for s in surfaces:
+        periodic_surface_id = s.get('periodic_surface')
+        if periodic_surface_id is not None:
+            surf.periodic_surface = openmc_surfaces[periodic_surface_id]
 
     return openmc_surfaces
 
