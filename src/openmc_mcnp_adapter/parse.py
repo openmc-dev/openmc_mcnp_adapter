@@ -38,7 +38,7 @@ _READ_RE = re.compile(r"""
 _CELL1_RE = re.compile(r'\s*(\d+)\s+(\d+)([ \t0-9:#().dDeE\+-]+)\s*(.*)')
 _CELL2_RE = re.compile(r'\s*(\d+)\s+like\s+(\d+)\s+but\s*(.*)')
 _CELL_FILL_RE = re.compile(r'\s*(\d+)\s*(?:\((.*)\))?')
-_SURFACE_RE = re.compile(r'\s*(\*?\d+)(\s*[-0-9]+)?\s+(\S+)((?:\s+\S+)+)')
+_SURFACE_RE = re.compile(r'\s*([*+]?\d+)(\s*[-0-9]+)?\s+(\S+)((?:\s+\S+)+)')
 _MATERIAL_RE = re.compile(r'\s*[Mm](\d+)((?:\s+\S+)+)')
 _TR_RE = re.compile(r'\s*(\*)?[Tt][Rr](\d+)\s+(.*)')
 _SAB_RE = re.compile(r'\s*[Mm][Tt](\d+)((?:\s+\S+)+)')
@@ -199,10 +199,12 @@ def parse_surface(line):
     g = m.groups()
     surface = {}
     if '*' in g[0]:
-        surface['reflective'] = True
+        surface['boundary'] = 'reflective'
+        uid = int(g[0][1:])
+    elif '+' in g[0]:
+        surface['boundary'] = 'white'
         uid = int(g[0][1:])
     else:
-        surface['reflective'] = False
         uid = int(g[0])
     surface.update({
         'id': uid,
@@ -211,9 +213,8 @@ def parse_surface(line):
     })
     if g[1] is not None:
         if int(g[1]) < 0:
-            surface['periodic'] = int(g[1])
-            # TODO: Move into OpenMC conversion
-            raise NotImplementedError('Periodic boundary conditions not supported')
+            surface['boundary'] = 'periodic'
+            surface['periodic_surface'] = abs(int(g[1]))
         else:
             surface['tr'] = int(g[1])
     return surface

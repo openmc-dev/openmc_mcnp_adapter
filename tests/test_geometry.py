@@ -161,6 +161,7 @@ def test_trcl_macrobody():
         "*FILL=10(2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0)",
         "FILL=10(1)",
         "FILL=10(2)",
+        "FILL=10(3)",
     ]
 )
 def test_fill_transformation(keywords):
@@ -176,6 +177,7 @@ def test_fill_transformation(keywords):
     m1     1001.80c  1.0
     tr1    2.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0
     *tr2   2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0
+    tr3    2.0 0.0 0.0
     """)
     model = mcnp_str_to_model(mcnp_str)
     geometry = model.geometry
