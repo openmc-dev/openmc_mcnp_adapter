@@ -135,6 +135,21 @@ def test_trcl(cell_card, surface_cards, points_inside, points_outside):
         assert point not in cell.region
 
 
+def test_trcl_macrobody():
+    mcnp_str = dedent("""
+    title
+    1 0 -1 trcl=(2.0 0.0 0.0)
+
+    1 rpp -1.0 1.0 -1.0 1.0 -1.0 1.0
+
+    m1     1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    cell = model.geometry.get_all_cells()[1]
+    assert (1.5, 0., 0.) in cell.region
+    assert (0., 0., 0.) not in cell.region
+
+
 @mark.parametrize(
     "keywords",
     [
@@ -170,3 +185,17 @@ def test_fill_transformation(keywords):
     assert geometry.find((2.0, 0.0, 0.0))[-1] is cells[2]
     assert geometry.find((4.0, 0.0, 0.0))[-1] is cells[3]
     assert geometry.find((0.0, 0.0, 0.0))[-1] is cells[3]
+
+
+def test_cell_volume():
+    mcnp_str = dedent("""
+    title
+    1 0 -1  VOL=5.0
+
+    1 so 1.0
+
+    m1   1001.80c  1.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    cell = model.geometry.get_all_cells()[1]
+    assert cell.volume == 5.0
