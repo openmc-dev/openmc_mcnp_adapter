@@ -28,7 +28,6 @@ to manually set boundary conditions on the outermost surfaces.
 
 Some geometry features are not currently supported:
 
-- Periodic boundary conditions
 - `X`, `Y`, and `Z` surfaces with 3 coordinate pairs
 - `RHP`, `REC`, `ELL`, `WED`, and `ARB` macrobodies
 - Hexagonal lattices
