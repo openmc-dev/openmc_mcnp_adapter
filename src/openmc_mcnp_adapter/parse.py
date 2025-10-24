@@ -12,7 +12,7 @@ import numpy as np
 # Regular expressions for cell parameters
 _KEYWORDS = [
     r'\*?trcl', r'\*?fill', 'tmp', 'u', 'lat',
-    'imp:.', 'vol', 'pwt', 'ext:.', 'fcl', 'wwn', 'dxc', 'nonu', 'pd',
+    'imp:(?:.(?:,.)*)', 'vol', 'pwt', 'ext:.', 'fcl', 'wwn', 'dxc', 'nonu', 'pd',
     'elpt', 'cosy', 'bflcl', 'unc', 'mat', 'rho',
     'pmt'  # D1SUNED-specific
 ]
