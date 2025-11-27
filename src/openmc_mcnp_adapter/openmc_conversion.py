@@ -563,14 +563,22 @@ def get_openmc_universes(cells, surfaces, materials, data):
             # Drop parentheses
             trcl = trcl[1:-1].split()
 
-            vector = tuple(float(c) for c in trcl[:3])
-            c['_region'] = c['_region'].translate(vector, translate_memo)
+            # Get displacement vector
+            vector = np.array([float(c) for c in trcl[:3]])
 
             if len(trcl) > 3:
-                rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
+                # If displacement vector origin is -1, reverse displacement vector
+                if len(trcl) == 13:
+                    if int(trcl[12]) == -1:
+                        vector *= -1
+                c['_region'] = c['_region'].translate(vector, translate_memo)
+
+                rotation_matrix = np.array([float(x) for x in trcl[3:12]]).reshape((3, 3))
                 if use_degrees:
                     rotation_matrix = np.cos(rotation_matrix * pi/180.0)
                 c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
+            else:
+                c['_region'] = c['_region'].translate(vector, translate_memo)
 
             # Update surfaces dictionary with new surfaces
             for surf_id, surf in c['_region'].get_surfaces().items():
@@ -846,8 +854,13 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 if ftrans is not None:
                     ftrans = ftrans.split()
                     if len(ftrans) > 3:
-                        cell.translation = tuple(float(x) for x in ftrans[:3])
-                        rotation_matrix = np.array([float(x) for x in ftrans[3:]]).reshape((3, 3))
+                        vector = np.array([float(x) for x in ftrans[:3]])
+                        if len(ftrans) == 13:
+                            if int(ftrans[12]) == -1:
+                                vector *= -1
+
+                        cell.translation = tuple(vector)
+                        rotation_matrix = np.array([float(x) for x in ftrans[3:12]]).reshape((3, 3))
                         if use_degrees:
                             rotation_matrix = np.cos(rotation_matrix * pi/180.0)
                         cell.rotation = rotation_matrix

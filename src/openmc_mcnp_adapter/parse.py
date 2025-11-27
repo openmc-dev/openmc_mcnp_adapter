@@ -270,6 +270,9 @@ def parse_data(section):
             if len(values) >= 3:
                 displacement = np.array([float(x) for x in values[:3]])
             if len(values) >= 12:
+                if len(values) == 13:
+                    if int(values[12]) == -1:
+                        displacement *= -1
                 rotation = np.array([float(x) for x in values[3:12]]).reshape((3,3)).T
                 if use_degrees:
                     rotation = np.cos(rotation * pi/180.0)
