@@ -109,3 +109,50 @@ def test_density_no_whitespace():
     model = mcnp_str_to_model(mcnp_model)
     m = model.materials[0]
     assert m.get_mass_density() == approx(4.5)
+
+
+def test_material_keywords_at_beginning():
+    """Test material card with keywords at the beginning"""
+    mat_card = "m1   NLIB=70c PLIB=04p 92235.70c 1.0 92238.70c 0.5"
+    m = convert_material(mat_card, -1.0)
+    nd = m.get_nuclide_densities()
+    assert 'U235' in nd and nd['U235'].percent == approx(1.0)
+    assert 'U238' in nd and nd['U238'].percent == approx(0.5)
+
+
+def test_material_keywords_in_middle():
+    """Test material card with keywords interspersed with nuclide pairs"""
+    mat_card = "m1   92235.70c 1.0 NLIB=70c 92238.70c 0.5 PLIB=04p 92234.70c 0.3"
+    m = convert_material(mat_card, -1.0)
+    nd = m.get_nuclide_densities()
+    assert 'U235' in nd and nd['U235'].percent == approx(1.0)
+    assert 'U238' in nd and nd['U238'].percent == approx(0.5)
+    assert 'U234' in nd and nd['U234'].percent == approx(0.3)
+
+
+def test_material_keywords_with_spaces():
+    """Test material card with keywords that have spaces around equals sign"""
+    mat_card = "m1   92235.70c 1.5 NLIB = 80c 92238.70c 0.5 GAS = 0"
+    m = convert_material(mat_card, -2.0)
+    nd = m.get_nuclide_densities()
+    assert 'U235' in nd and nd['U235'].percent == approx(1.5)
+    assert 'U238' in nd and nd['U238'].percent == approx(0.5)
+    assert m.get_mass_density() == approx(2.0)
+
+
+def test_material_keywords_at_end():
+    """Test material card with keywords at the end"""
+    mat_card = "m1   92235.70c 2.0 92238.70c 1.0 NLIB=70c PLIB=04p"
+    m = convert_material(mat_card, -1.0)
+    nd = m.get_nuclide_densities()
+    assert 'U235' in nd and nd['U235'].percent == approx(2.0)
+    assert 'U238' in nd and nd['U238'].percent == approx(1.0)
+
+
+def test_material_without_keywords():
+    """Test that material cards without keywords still work correctly"""
+    mat_card = "m1   92235.70c 1.0 92238.70c 0.5"
+    m = convert_material(mat_card, -1.0)
+    nd = m.get_nuclide_densities()
+    assert 'U235' in nd and nd['U235'].percent == approx(1.0)
+    assert 'U238' in nd and nd['U238'].percent == approx(0.5)
