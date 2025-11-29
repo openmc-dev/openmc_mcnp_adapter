@@ -241,13 +241,28 @@ def parse_data(section):
     for line in lines:
         if _MATERIAL_RE.match(line):
             g = _MATERIAL_RE.match(line).groups()
-            spec = g[1].split()
+            spec_text = g[1]
+
+            # Extract keywords (key=value) and remove them from spec
+            keyword_pattern = re.compile(r'(\S+)\s*=\s*(\S+)')
+            keywords = {}
+            def extract_keyword(match):
+                keywords[match.group(1).lower()] = match.group(2)
+                return ''
+            spec_text = keyword_pattern.sub(extract_keyword, spec_text)
+
+            # Parse remaining nuclide-density pairs
+            spec = spec_text.split()
             try:
                 nuclides = list(zip(spec[::2], map(float_, spec[1::2])))
             except Exception:
                 raise ValueError('Invalid material specification?')
+
             uid = int(g[0])
-            data['materials'][uid].update({'id': uid, 'nuclides': nuclides})
+            material_data = {'id': uid, 'nuclides': nuclides}
+            if keywords:
+                material_data['keywords'] = keywords
+            data['materials'][uid].update(material_data)
         elif _SAB_RE.match(line):
             g = _SAB_RE.match(line).groups()
             uid = int(g[0])
