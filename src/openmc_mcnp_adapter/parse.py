@@ -377,8 +377,9 @@ def sanitize(section: str) -> str:
     # Remove end-of-line comments
     section = re.sub(r'\$.*$', '', section, flags=re.MULTILINE)
 
-    # Remove comment cards
-    section = re.sub('^[ \t]*?[cC].*?$\n?', '', section, flags=re.MULTILINE)
+    # Remove comment cards: 'c' in first 5 columns followed by at least one
+    # blank, or 'c' as the only character on the line
+    section = re.sub(r'^[ \t]{0,4}[cC](?:[ \t]+.*)?$\n?', '', section, flags=re.MULTILINE)
 
     # Turn continuation lines into single line
     section = re.sub('&.*\n', ' ', section)

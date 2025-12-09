@@ -156,3 +156,27 @@ def test_material_without_keywords():
     nd = m.get_nuclide_densities()
     assert 'U235' in nd and nd['U235'].percent == approx(1.0)
     assert 'U238' in nd and nd['U238'].percent == approx(0.5)
+
+def test_material_with_code_keyword():
+    """Test that keywords starting with 'c' are not treated as comment cards"""
+    # This tests the case where continuation line has keyword starting with 'c'
+    # The 'code=0' line should not be treated as a comment card
+    mcnp_model = textwrap.dedent("""
+        title
+        1   1 -1.0    1
+        2   2 -1.0   -1
+
+        1   px 0.0
+
+        m1  1001.70c 1.0 &
+        code=0
+        m2  1001.70c 1.0
+    """)
+    model = mcnp_str_to_model(mcnp_model)
+    # Should have two distinct materials
+    assert len(model.materials) == 2
+    # Both materials should have H1
+    for mat in model.materials:
+        nd = mat.get_nuclide_densities()
+        assert 'H1' in nd
+        assert nd['H1'].percent == approx(1.0)
