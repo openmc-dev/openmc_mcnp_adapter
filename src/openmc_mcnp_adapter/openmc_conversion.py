@@ -777,8 +777,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 lattice.dimension = shape
 
                 # Universe IDs array as ([z], y, x)
-                univ_ids = np.asarray(univ_ids, dtype=int)
-                univ_ids.shape = shape[::-1]
+                univ_ids = np.asarray(univ_ids, dtype=int).reshape(shape[::-1])
 
                 # Depending on the order of the surfaces listed, it may be
                 # necessary to flip some axes
