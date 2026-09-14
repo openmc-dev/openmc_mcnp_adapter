@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 import argparse
-from math import pi, isclose
+from math import pi, isclose, sqrt
 import os
 import re
 import tempfile
@@ -18,6 +18,7 @@ from openmc.model.surface_composite import (
     RectangularParallelepiped as RPP,
     OrthogonalBox as BOX,
     ConicalFrustum as TRC,
+    HexagonalPrism,
 )
 from openmc.model import surface_composite
 
@@ -40,6 +41,16 @@ _MACROBODY_FACETS = {
         1: ('cyl', False),
         2: ('top', False),
         3: ('bottom', True)
+    },
+    HexagonalPrism: {
+        1: ('plane_max', False),
+        2: ('plane_min', True),
+        3: ('upper_right', False),
+        4: ('lower_left', True),
+        5: ('upper_left', False),
+        6: ('lower_right', True),
+        7: ('top', False),
+        8: ('bottom', True),
     },
     RPP: {
         1: ('xmax', False),
@@ -380,6 +391,55 @@ def get_openmc_surfaces(surfaces, data):
             r1 = coeffs[6]
             r2 = coeffs[7]
             surf = TRC(v, h, r1, r2)
+        elif s['mnemonic'] in ('rhp', 'hex'):
+            # Missing entries are zero, so that a lone value after the height
+            # vector is the x component of r
+            coeffs = list(coeffs)
+            if len(coeffs) < 9:
+                coeffs += [0.0]*(9 - len(coeffs))
+            v, h, r = (np.array(coeffs[i:i + 3]) for i in (0, 3, 6))
+            if len(coeffs) > 9:
+                # The facet vectors s and t are only supported for a regular
+                # hexagon, where they are r rotated by 60 and 120 degrees
+                # about h
+                coeffs += [0.0]*(15 - len(coeffs))
+                axis = h/np.linalg.norm(h)
+                x = r - axis*np.dot(axis, r)
+                y = np.cross(axis, x)
+                tolerance = 1e-5*np.linalg.norm(x)
+                for vec, angle in ((coeffs[9:12], pi/3),
+                                   (coeffs[12:15], 2*pi/3)):
+                    regular = x*np.cos(angle) + y*np.sin(angle)
+                    if not np.allclose(vec, regular, atol=tolerance):
+                        raise NotImplementedError(
+                            f"{s['mnemonic'].upper()} surface {s['id']} is "
+                            "not a regular hexagonal prism")
+
+            height = np.linalg.norm(h)
+            if height == 0.0:
+                raise ValueError(f"Height vector of {s['mnemonic'].upper()} "
+                                 f"surface {s['id']} must be nonzero")
+            axis = h/height
+
+            # Only the component of r perpendicular to the axis is meaningful
+            r = r - axis*np.dot(axis, r)
+            apothem = np.linalg.norm(r)
+            if apothem == 0.0:
+                raise ValueError(f"Facet vector of {s['mnemonic'].upper()} "
+                                 f"surface {s['id']} must be nonzero")
+
+            # Regular hexagon with facets perpendicular to x and an apothem
+            # equal to the length of r; the prism is infinite along its axis
+            # if the height is at least 1e6 cm, as in MCNP
+            ends = ({} if height >= 1.0e6
+                    else {'zmin': 0.0, 'zmax': height})
+            surf = HexagonalPrism(edge_length=2*apothem/sqrt(3),
+                                  orientation='y', **ends)
+
+            # Rotate x onto r and z onto the axis, then move the bottom to v
+            x_axis = r/apothem
+            rotation = np.column_stack((x_axis, np.cross(axis, x_axis), axis))
+            surf = surf.rotate(rotation).translate(v)
         else:
             raise NotImplementedError('Surface type "{}" not supported'
                                       .format(s['mnemonic']))
@@ -476,6 +536,305 @@ def replace_macrobody_facets(region: str, surfaces: dict) -> str:
     return region
 
 
+def _macrobody_facets(region: str, surfaces: dict) -> str:
+    """Expand a region that is a single negative macrobody into its facets
+
+    A lattice cell bounded by a macrobody takes its index directions from the
+    facets in MCNP order: [1,0,0] lies beyond facet 1, [-1,0,0] beyond facet 2,
+    and so on, so the facets must be listed in that order.
+
+    Parameters
+    ----------
+    region : str
+        Boolean expression relating surface half-spaces.
+    surfaces : dict
+        Dictionary mapping surface ID to :class:`openmc.Surface`
+
+    Returns
+    -------
+    str
+        The expression with a lone negative macrobody replaced by the
+        intersection of its facets in MCNP order, otherwise unchanged.
+    """
+    match = re.fullmatch(r'\s*-(\d+)\s*', region)
+    if match is None:
+        return region
+    surface_id = match.group(1)
+    surf = surfaces.get(int(surface_id))
+    if not isinstance(surf, CompositeSurface):
+        return region
+    facets = _MACROBODY_FACETS[type(surf)]
+    return ' '.join(f'-{surface_id}.{num}'
+                    for num, (attr, _) in sorted(facets.items())
+                    if hasattr(surf, attr))
+
+
+# Tolerance used when comparing lattice vectors
+_LATTICE_TOL = 1.0e-6
+
+
+def _new_lattice(parameters, uid):
+    """Create an empty lattice matching the LAT card of an MCNP cell
+
+    Parameters
+    ----------
+    parameters : dict
+        Parameters of the MCNP lattice cell
+    uid : int
+        Universe ID of the lattice
+
+    Returns
+    -------
+    openmc.Lattice
+        Rectangular lattice for LAT=1, hexagonal lattice for LAT=2
+
+    """
+    if int(parameters['lat']) == 2:
+        return openmc.HexLattice(uid)
+    else:
+        return openmc.RectLattice(uid)
+
+
+def _lattice_element(region):
+    """Determine the geometry of a single lattice element
+
+    The region of a lattice cell is an intersection of planar half-spaces
+    listed in pairs of opposite facets. In MCNP, the element [1,0,0] lies
+    beyond the first surface listed, [-1,0,0] beyond the second, [0,1,0]
+    beyond the third, and so on. Each pair of facets thus gives the
+    displacement to the neighboring element across it as well as one equation
+    for the center of the element.
+
+    Parameters
+    ----------
+    region : openmc.Region
+        Region of the lattice cell
+
+    Returns
+    -------
+    center : numpy.ndarray
+        Center of the [0,0,0] lattice element
+    vectors : list of numpy.ndarray
+        Displacement to the neighboring element across each pair of facets, in
+        the order in which the facets are listed
+
+    """
+    n = len(region) if isinstance(region, openmc.Intersection) else 1
+    if n < 4:
+        raise NotImplementedError('One-dimensional lattices not supported')
+    if n % 2 or n > 8 or \
+            not all(isinstance(node, openmc.Halfspace) for node in region):
+        raise ValueError('Lattice cell must be bounded by four, six or eight '
+                         'planar surfaces')
+
+    normals, offsets = [], []
+    for node in region:
+        surface = node.surface
+        if not isinstance(surface, openmc.PlaneMixin):
+            raise ValueError('Lattice cell must be bounded by planar surfaces '
+                             'but surface {} is a {}'.format(
+                                 surface.id, type(surface).__name__))
+        normal = np.array([surface.a, surface.b, surface.c])
+        length = np.linalg.norm(normal)
+
+        # A cell on the negative side of a plane has an outward normal that
+        # points along the normal of the plane
+        sense = 1.0 if node.side == '-' else -1.0
+        normals.append(sense*normal/length)
+        offsets.append(sense*surface.d/length)
+
+    vectors, rows, rhs = [], [], []
+    for k in range(0, n, 2):
+        u1, s1 = normals[k], offsets[k]
+        u2, s2 = normals[k + 1], offsets[k + 1]
+        if not np.allclose(u1, -u2, atol=_LATTICE_TOL):
+            raise ValueError('Facets {} and {} of a lattice cell are not '
+                             'parallel and opposite'.format(k + 1, k + 2))
+        vectors.append((s1 + s2)*u1)
+        rows.append(u1)
+        rhs.append((s1 - s2)/2)
+
+    center = np.linalg.lstsq(np.array(rows), np.array(rhs), rcond=None)[0]
+    return center, vectors
+
+
+def _fill_rect_lattice(lattice, center, vectors, ranges, univ_ids,
+                       get_universe):
+    """Set the geometry and the universes of a rectangular lattice
+
+    Parameters
+    ----------
+    lattice : openmc.RectLattice
+        Lattice to be filled
+    center : numpy.ndarray
+        Center of the [0,0,0] lattice element
+    vectors : list of numpy.ndarray
+        Displacement to the neighboring element across each pair of facets, as
+        given by :func:`_lattice_element`
+    ranges : iterable of tuple of int
+        Lower and upper index of the FILL array along each of the three MCNP
+        lattice directions
+    univ_ids : numpy.ndarray
+        Universe IDs of the FILL array with the first index varying fastest
+    get_universe : callable
+        Function returning the universe with a given ID
+
+    """
+    ndim = len(vectors)
+    if ndim > 3:
+        raise ValueError('Rectangular lattice cell must be bounded by four or '
+                         'six planar surfaces')
+
+    # Coordinate axis along which each lattice direction lies
+    axes = []
+    for vec in vectors:
+        axis = int(np.argmax(np.abs(vec)))
+        if not np.isclose(abs(vec[axis]), np.linalg.norm(vec),
+                          atol=_LATTICE_TOL):
+            raise NotImplementedError('Rectangular lattices with sides not '
+                                      'perpendicular to a coordinate axis are '
+                                      'not supported')
+        axes.append(axis)
+    if ndim == 2 and sorted(axes) != [0, 1]:
+        raise NotImplementedError('2D lattice with basis other than x-y not '
+                                  'supported')
+    if sorted(axes) != list(range(ndim)):
+        raise ValueError('Lattice directions must lie along different axes')
+
+    # Universe IDs as an array indexed by ([k], j, i)
+    counts = [upper - lower + 1 for lower, upper in ranges[:ndim]]
+    univ_ids = np.asarray(univ_ids).reshape(counts[::-1])
+
+    # Make each index increase along its axis and order the array as
+    # ([z], y, x)
+    for m, vec in enumerate(vectors):
+        if vec[axes[m]] < 0.0:
+            univ_ids = np.flip(univ_ids, axis=ndim - 1 - m)
+    univ_ids = np.transpose(univ_ids, [ndim - 1 - axes.index(axis)
+                                       for axis in reversed(range(ndim))])
+
+    pitch, lower_left, dimension = [], [], []
+    for axis in range(ndim):
+        m = axes.index(axis)
+        step = vectors[m][axis]
+        lower, upper = ranges[m]
+        pitch.append(abs(step))
+        lower_left.append(center[axis] + min(lower*step, upper*step)
+                          - abs(step)/2)
+        dimension.append(upper - lower + 1)
+
+    lattice.pitch = pitch
+    lattice.lower_left = lower_left
+    lattice.dimension = dimension
+
+    # Fill universes in OpenMC lattice, reversing y direction
+    lattice.universes = np.vectorize(get_universe)(univ_ids)[..., ::-1, :]
+
+
+def _fill_hex_lattice(lattice, center, vectors, ranges, univ_ids, get_universe,
+                      filler):
+    """Set the geometry and the universes of a hexagonal lattice
+
+    Parameters
+    ----------
+    lattice : openmc.HexLattice
+        Lattice to be filled
+    center : numpy.ndarray
+        Center of the [0,0,0] lattice element
+    vectors : list of numpy.ndarray
+        Displacement to the neighboring element across each pair of facets, as
+        given by :func:`_lattice_element`
+    ranges : iterable of tuple of int
+        Lower and upper index of the FILL array along each of the three MCNP
+        lattice directions
+    univ_ids : numpy.ndarray
+        Universe IDs of the FILL array with the first index varying fastest
+    get_universe : callable
+        Function returning the universe with a given ID
+    filler : openmc.Universe
+        Universe used for the hexagons that are not part of the FILL array
+
+    """
+    if len(vectors) not in (3, 4):
+        raise ValueError('Hexagonal lattice cell must be bounded by six or '
+                         'eight planar surfaces')
+    a1, a2, a5 = vectors[:3]
+
+    # In MCNP, [1,0,0] is across the first facet, [0,1,0] across the third and
+    # [-1,1,0] across the fifth
+    if not np.allclose(a5, a2 - a1, atol=_LATTICE_TOL):
+        raise ValueError('Hexagonal lattice surface order does not follow the '
+                         'MCNP hexagonal lattice convention (the element '
+                         'across the fifth facet must be [-1,1,0])')
+    if not (np.isclose(a1[2], 0.0, atol=_LATTICE_TOL) and
+            np.isclose(a2[2], 0.0, atol=_LATTICE_TOL)):
+        raise NotImplementedError('Only hexagonal lattices along the z-axis '
+                                  'are supported')
+
+    # Check that the hexagon is regular
+    pitch = np.linalg.norm(a1)
+    cos_angle = np.dot(a1, a2)/(pitch*np.linalg.norm(a2))
+    if not (np.isclose(np.linalg.norm(a2), pitch, atol=_LATTICE_TOL) and
+            np.isclose(abs(cos_angle), 0.5, atol=_LATTICE_TOL)):
+        raise ValueError('Irregular hexagonal lattices are not supported')
+
+    # Orientation 'x' has facets perpendicular to x, 'y' perpendicular to y
+    angle = np.degrees(np.arctan2(a1[1], a1[0])) % 60.0
+    if np.isclose(angle, 0.0, atol=_LATTICE_TOL) or \
+            np.isclose(angle, 60.0, atol=_LATTICE_TOL):
+        lattice.orientation = 'x'
+        basis = np.array([[pitch, pitch/2], [0., pitch*sqrt(3)/2]])
+    elif np.isclose(angle, 30.0, atol=_LATTICE_TOL):
+        lattice.orientation = 'y'
+        basis = np.array([[pitch*sqrt(3)/2, 0.], [pitch/2, pitch]])
+    else:
+        raise NotImplementedError('Rotated hexagonal lattices not supported')
+
+    # Matrix converting MCNP indices into OpenMC (x, alpha) indices
+    matrix = np.linalg.solve(basis, np.array([a1[:2], a2[:2]]).T)
+    matrix = np.rint(matrix).astype(int)
+
+    (i1, i2), (j1, j2), (k1, k2) = ranges
+
+    # Number of rings needed to cover the four corners of the MCNP array
+    corners = [matrix @ (i, j) for i in (i1, i2) for j in (j1, j2)]
+    num_rings = 1 + max(max(abs(x), abs(a), abs(x + a)) for x, a in corners)
+
+    def empty_rings():
+        return [[filler]*max(6*(num_rings - 1 - r), 1) for r in range(num_rings)]
+
+    three_d = (len(vectors) == 4)
+    if three_d:
+        a3 = vectors[3]
+        if not np.allclose(a3[:2], 0.0, atol=_LATTICE_TOL):
+            raise NotImplementedError('Only hexagonal lattices along the '
+                                      'z-axis are supported')
+        lattice.universes = [empty_rings() for _ in range(k2 - k1 + 1)]
+        lattice.pitch = (pitch, abs(a3[2]))
+        lattice.center = (center[0], center[1],
+                          center[2] + (k1 + k2)/2*a3[2])
+    else:
+        a3 = np.zeros(3)
+        lattice.universes = empty_rings()
+        lattice.pitch = (pitch,)
+        lattice.center = (center[0], center[1])
+
+    n = 0
+    for k in range(k1, k2 + 1):
+        for j in range(j1, j2 + 1):
+            for i in range(i1, i2 + 1):
+                x, alpha = matrix @ (i, j)
+                if three_d:
+                    z = k - k1 if a3[2] > 0 else k2 - k
+                    iz, ring, pos = lattice.get_universe_index((x, alpha, z))
+                    lattice.universes[iz][ring][pos] = \
+                        get_universe(univ_ids[n])
+                else:
+                    ring, pos = lattice.get_universe_index((x, alpha))
+                    lattice.universes[ring][pos] = get_universe(univ_ids[n])
+                n += 1
+
+
 def get_openmc_universes(cells, surfaces, materials, data):
     """Get OpenMC surfaces from MCNP surfaces
 
@@ -529,6 +888,10 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
         # Assign region to cell based on expression
         region = c['region'].replace('#', '~').replace(':', '|')
+
+        # A lattice cell bounded by a macrobody needs its facets in MCNP order
+        if 'lat' in c['parameters']:
+            region = _macrobody_facets(region, surfaces)
 
         # Replace macrobody facet specifiers in the region expression
         if '.' in region:
@@ -622,6 +985,10 @@ def get_openmc_universes(cells, surfaces, materials, data):
         # Assign region to cell based on expression
         region = region.replace('#', '~').replace(':', '|')
 
+        # A lattice cell bounded by a macrobody needs its facets in MCNP order
+        if 'lat' in c['parameters']:
+            region = _macrobody_facets(region, surfaces)
+
         # Replace macrobody facet specifiers in the region expression
         if '.' in region:
             region = replace_macrobody_facets(region, surfaces)
@@ -638,6 +1005,14 @@ def get_openmc_universes(cells, surfaces, materials, data):
     # Now that all cell regions have been converted, the next loop is to create
     # actual Cell/Universe/Lattice objects
     material_clones = {}
+    # Parameters of lattice cells by universe ID, along with a cache of
+    # wrapper universes for them (OpenMC can't place a lattice directly inside
+    # another lattice)
+    lattice_params = {abs(int(ci['parameters']['u'])): ci['parameters']
+                      for ci in cells
+                      if 'lat' in ci['parameters'] and 'u' in ci['parameters']}
+    lattice_wrappers = {}
+
     for c in cells:
         cell = openmc.Cell(cell_id=c['id'])
 
@@ -695,118 +1070,84 @@ def get_openmc_universes(cells, surfaces, materials, data):
         # Create lattices
         if 'fill' in c['parameters'] or '*fill' in c['parameters']:
             if 'lat' in c['parameters']:
-                # Check what kind of lattice this is
-                if int(c['parameters']['lat']) == 2:
-                    raise NotImplementedError("Hexagonal lattices not supported")
-
                 # Cell filled with Lattice
                 uid = abs(int(c['parameters']['u']))
                 if uid not in universes:
-                    universes[uid] = openmc.RectLattice(uid)
+                    universes[uid] = _new_lattice(c['parameters'], uid)
                 lattice = universes[uid]
-
-                # Determine dimensions of single lattice element
-                if len(cell.region) < 4:
-                    raise NotImplementedError('One-dimensional lattices not supported')
-                sides = {'x': [], 'y': [], 'z': []}
-                for n in cell.region:
-                    if isinstance(n.surface, openmc.XPlane):
-                        sides['x'].append(n.surface.x0)
-                    elif isinstance(n.surface, openmc.YPlane):
-                        sides['y'].append(n.surface.y0)
-                    elif isinstance(n.surface, openmc.ZPlane):
-                        sides['z'].append(n.surface.z0)
-                if not sides['x'] or not sides['y']:
-                    raise NotImplementedError('2D lattice with basis other than x-y not supported')
-
-                # MCNP's convention is that across the first surface listed is
-                # the (1,0,0) element and across the second surface is the
-                # (-1,0,0) element
-                if sides['z']:
-                    v1, v0 = np.array([sides['x'], sides['y'], sides['z']]).T
-                else:
-                    v1, v0 = np.array([sides['x'], sides['y']]).T
-
-                pitch = abs(v1 - v0)
+                hexagonal = isinstance(lattice, openmc.HexLattice)
 
                 def get_universe(uid):
                     if uid not in universes:
-                        universes[uid] = openmc.Universe(uid)
-                    return universes[uid]
+                        if uid in lattice_params:
+                            universes[uid] = _new_lattice(
+                                lattice_params[uid], uid)
+                        else:
+                            universes[uid] = openmc.Universe(uid)
+                    univ = universes[uid]
+                    if isinstance(univ, openmc.Lattice):
+                        # OpenMC cannot place a lattice directly inside
+                        # another lattice, so return a universe wrapping it
+                        if uid not in lattice_wrappers:
+                            lattice_wrappers[uid] = openmc.Universe(
+                                cells=[openmc.Cell(fill=univ)])
+                        return lattice_wrappers[uid]
+                    return univ
+
+                # Geometry of a single lattice element
+                center, vectors = _lattice_element(cell.region)
 
                 # Get extent of lattice
-                words = c['parameters']['fill'].split()
+                fill = c['parameters']['fill']
+                words = fill.split()
 
                 # If there's only a single parameter, the lattice is infinite
                 inf_lattice = (len(words) == 1)
 
                 if inf_lattice:
-                    # Infinite lattice
-                    xmin = xmax = ymin = ymax = zmin = zmax = 0
+                    ranges = [(0, 0), (0, 0), (0, 0)]
                     univ_ids = words
                 else:
-                    pairs = re.findall(r'-?\d+\s*:\s*-?\d+', c['parameters']['fill'])
-                    i_colon = c['parameters']['fill'].rfind(':')
-                    univ_ids = c['parameters']['fill'][i_colon + 1:].split()[1:]
+                    pairs = re.findall(r'-?\d+\s*:\s*-?\d+', fill)
+                    i_colon = fill.rfind(':')
+                    univ_ids = fill[i_colon + 1:].split()[1:]
 
                     if not pairs:
                         raise ValueError('Cant find lattice specification')
 
-                    xmin, xmax = map(int, pairs[0].split(':'))
-                    ymin, ymax = map(int, pairs[1].split(':'))
-                    zmin, zmax = map(int, pairs[2].split(':'))
-                    assert xmax >= xmin
-                    assert ymax >= ymin
-                    assert zmax >= zmin
+                    ranges = [tuple(map(int, pairs[i].split(':')))
+                              for i in range(3)]
+                    for lower, upper in ranges:
+                        assert upper >= lower
+                univ_ids = np.asarray(univ_ids, dtype=int)
 
-                if pitch.size == 3:
-                    index0 = np.array([xmin, ymin, zmin])
-                    index1 = np.array([xmax, ymax, zmax])
-                else:
-                    index0 = np.array([xmin, ymin])
-                    index1 = np.array([xmax, ymax])
-                shape = index1 - index0 + 1
-
-                # Determine lower-left corner of lattice
-                corner0 = v0 + index0*(v1 - v0)
-                corner1 = v1 + index1*(v1 - v0)
-                lower_left = np.min(np.vstack((corner0, corner1)), axis=0)
-
-                lattice.pitch = pitch
-                lattice.lower_left = lower_left
-                lattice.dimension = shape
-
-                # Universe IDs array as ([z], y, x)
-                univ_ids = np.asarray(univ_ids, dtype=int).reshape(shape[::-1])
-
-                # Depending on the order of the surfaces listed, it may be
-                # necessary to flip some axes
-                if (v1 - v0)[0] < 0.:
-                    # lattice positions on x-axis are backwards
-                    univ_ids = np.flip(univ_ids, axis=-1)
-                if (v1 - v0)[1] < 0.:
-                    # lattice positions on y-axis are backwards
-                    univ_ids = np.flip(univ_ids, axis=-2)
-                if sides['z'] and (v1 - v0)[2] < 0.:
-                    # lattice positions on z-axis are backwards
-                    univ_ids = np.flip(univ_ids, axis=-3)
+                # A finite lattice with a single axial layer becomes a 2D
+                # lattice whose universes are translated to the layer, so that
+                # the top and bottom of the layer are not lattice surfaces
+                # coincident with those of the cell that contains it
+                k1, k2 = ranges[2]
+                if len(vectors) == (4 if hexagonal else 3) and k1 == k2 \
+                        and not inf_lattice:
+                    center[2] = -k1*vectors[-1][2]
+                    vectors = vectors[:-1]
 
                 # Check for universe ID same as the ID assigned to the cell
                 # itself -- since OpenMC can't handle this directly, we need
-                # to create an extra cell/universe to fill in the lattice
-                if np.any(univ_ids == uid):
-                    extra_cell = openmc.Cell(fill=mat)
-                    u = openmc.Universe(cells=[extra_cell])
-                    univ_ids[univ_ids == uid] = u.id
+                # to create an extra cell/universe to fill in the lattice. The
+                # same universe fills the hexagons that are not part of the
+                # FILL array of a hexagonal lattice.
+                if hexagonal or np.any(univ_ids == uid):
+                    extra_cell = openmc.Cell(
+                        fill=mat if cell_material_id > 0 else None)
+                    filler = openmc.Universe(cells=[extra_cell])
+                    univ_ids[univ_ids == uid] = filler.id
 
                     # Put it in universes dictionary so that get_universe
                     # works correctly
-                    universes[u.id] = u
+                    universes[filler.id] = filler
 
                 # If center of MCNP lattice element is not (0,0,0), we need
                 # to translate the universe
-                center = np.zeros(3)
-                center[:v0.size] = (v0 + v1)/2
                 if not np.all(center == 0.0):
                     for uid in np.unique(univ_ids):
                         # Create translated universe
@@ -818,15 +1159,16 @@ def get_openmc_universes(cells, surfaces, materials, data):
                         # Replace original universes with translated ones
                         univ_ids[univ_ids == uid] = u.id
 
-                # Get an array of universes instead of IDs
-                lat_univ = np.vectorize(get_universe)(univ_ids)
-
-                # Fill universes in OpenMC lattice, reversing y direction
-                lattice.universes = lat_univ[..., ::-1, :]
+                if hexagonal:
+                    _fill_hex_lattice(lattice, center, vectors, ranges,
+                                      univ_ids, get_universe, filler)
+                else:
+                    _fill_rect_lattice(lattice, center, vectors, ranges,
+                                       univ_ids, get_universe)
 
                 # For infinite lattices, set the outer universe
                 if inf_lattice:
-                    lattice.outer = lat_univ.ravel()[0]
+                    lattice.outer = get_universe(univ_ids[0])
 
                 cell._lattice = True
             else:
@@ -845,7 +1187,8 @@ def get_openmc_universes(cells, surfaces, materials, data):
                         if 'u' in ci['parameters']:
                             if abs(int(ci['parameters']['u'])) == uid:
                                 if 'lat' in ci['parameters']:
-                                    universes[uid] = openmc.RectLattice(uid)
+                                    universes[uid] = _new_lattice(
+                                        ci['parameters'], uid)
                                 else:
                                     universes[uid] = openmc.Universe(uid)
                                 break
