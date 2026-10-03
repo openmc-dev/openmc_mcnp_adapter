@@ -7,7 +7,7 @@ from openmc.model.surface_composite import OrthogonalBox, \
     RectangularParallelepiped, RightCircularCylinder, ConicalFrustum, \
     XConeOneSided, YConeOneSided, ZConeOneSided
 from openmc_mcnp_adapter import mcnp_str_to_model, get_openmc_surfaces
-from pytest import approx, mark, raises
+from pytest import approx, mark, raises, warns
 
 
 def convert_surface(mnemonic: str, params: Sequence[float]) -> openmc.Surface:
@@ -323,6 +323,14 @@ def test_torus(mnemonic, expected_type):
         assert getattr(surf, name) == approx(val)
 
 
+@mark.parametrize("mnemonic", ["tx", "ty", "tz"])
+def test_torus_degenerate_sphere(mnemonic):
+    with warns(UserWarning, match="Degenerate torus"):
+        surf = convert_surface(mnemonic, (1.0, 2.0, 3.0, 0.0, 0.5, 0.5))
+    assert isinstance(surf, openmc.Sphere)
+    assert (surf.x0, surf.y0, surf.z0, surf.r) == approx((1.0, 2.0, 3.0, 0.5))
+
+
 @mark.parametrize(
     "mnemonic, params, expected_type, attr, value",
     [
@@ -545,6 +553,29 @@ def test_rpp_facets():
     assert (0., 0., -2.0) not in cells[3].region
     assert (0., 0., 6.0) not in cells[3].region
 
+
+def test_box_facets():
+    # The same box as in test_rpp_facets; facets 2, 4 and 6 are the min planes
+    mcnp_str = dedent("""
+    title
+    1  1 -1.0  -1.1 -1.2
+    2  1 -1.0  -1.3 -1.4
+    3  1 -1.0  -1.5 -1.6
+
+    1  box -1.0 -3.0 0.5  3.0 0.0 0.0  0.0 7.0 0.0  0.0 0.0 5.0
+
+    m1   1001.80c  3.0
+    """)
+    cells = mcnp_str_to_model(mcnp_str).geometry.get_all_cells()
+    assert (0., 0., 0.) in cells[1].region
+    assert (-2.0, 0., 0.) not in cells[1].region
+    assert (2.5, 0., 0.) not in cells[1].region
+    assert (0., -1.0, 0.) in cells[2].region
+    assert (0., -4.0, 0.) not in cells[2].region
+    assert (0., 5.0, 0.) not in cells[2].region
+    assert (0., 0., 1.0) in cells[3].region
+    assert (0., 0., -2.0) not in cells[3].region
+    assert (0., 0., 6.0) not in cells[3].region
 
 # Remaining macrobody / complex surfaces not yet implemented in conversion:
 # RHP, HEX, REC, ELL, WED, ARB

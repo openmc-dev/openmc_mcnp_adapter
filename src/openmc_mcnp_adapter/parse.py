@@ -241,13 +241,28 @@ def parse_data(section):
     for line in lines:
         if _MATERIAL_RE.match(line):
             g = _MATERIAL_RE.match(line).groups()
-            spec = g[1].split()
+            spec_text = g[1]
+
+            # Extract keywords (key=value) and remove them from spec
+            keyword_pattern = re.compile(r'(\S+)\s*=\s*(\S+)')
+            keywords = {}
+            def extract_keyword(match):
+                keywords[match.group(1).lower()] = match.group(2)
+                return ''
+            spec_text = keyword_pattern.sub(extract_keyword, spec_text)
+
+            # Parse remaining nuclide-density pairs
+            spec = spec_text.split()
             try:
                 nuclides = list(zip(spec[::2], map(float_, spec[1::2])))
             except Exception:
                 raise ValueError('Invalid material specification?')
+
             uid = int(g[0])
-            data['materials'][uid].update({'id': uid, 'nuclides': nuclides})
+            material_data = {'id': uid, 'nuclides': nuclides}
+            if keywords:
+                material_data['keywords'] = keywords
+            data['materials'][uid].update(material_data)
         elif _SAB_RE.match(line):
             g = _SAB_RE.match(line).groups()
             uid = int(g[0])
@@ -270,6 +285,9 @@ def parse_data(section):
             if len(values) >= 3:
                 displacement = np.array([float(x) for x in values[:3]])
             if len(values) >= 12:
+                if len(values) == 13:
+                    if int(values[12]) == -1:
+                        displacement *= -1
                 rotation = np.array([float(x) for x in values[3:12]]).reshape((3,3)).T
                 if use_degrees:
                     rotation = np.cos(rotation * pi/180.0)
@@ -359,8 +377,9 @@ def sanitize(section: str) -> str:
     # Remove end-of-line comments
     section = re.sub(r'\$.*$', '', section, flags=re.MULTILINE)
 
-    # Remove comment cards
-    section = re.sub('^[ \t]*?[cC].*?$\n?', '', section, flags=re.MULTILINE)
+    # Remove comment cards: 'c' in first 5 columns followed by at least one
+    # blank, or 'c' as the only character on the line
+    section = re.sub(r'^[ \t]{0,4}[cC](?:[ \t]+.*)?$\n?', '', section, flags=re.MULTILINE)
 
     # Turn continuation lines into single line
     section = re.sub('&.*\n', ' ', section)

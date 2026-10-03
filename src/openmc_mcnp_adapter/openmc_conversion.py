@@ -30,11 +30,11 @@ from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 _MACROBODY_FACETS = {
     BOX: {
         1: ('ax1_max', False),
-        2: ('ax1_min', False),
+        2: ('ax1_min', True),
         3: ('ax2_max', False),
-        4: ('ax2_min', False),
+        4: ('ax2_min', True),
         5: ('ax3_max', False),
-        6: ('ax3_min', False),
+        6: ('ax3_min', True),
     },
     RCC: {
         1: ('cyl', False),
@@ -301,15 +301,17 @@ def get_openmc_surfaces(surfaces, data):
             a, b, c, d, e, f, g, h, j, k = coeffs
             surf = openmc.Quadric(surface_id=s['id'], a=a, b=b, c=c, d=d, e=e,
                                   f=f, g=g, h=h, j=j, k=k)
-        elif s['mnemonic'] == 'tx':
+        elif s['mnemonic'] in ('tx', 'ty', 'tz'):
             x0, y0, z0, a, b, c = coeffs
-            surf = openmc.XTorus(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
-        elif s['mnemonic'] == 'ty':
-            x0, y0, z0, a, b, c = coeffs
-            surf = openmc.YTorus(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
-        elif s['mnemonic'] == 'tz':
-            x0, y0, z0, a, b, c = coeffs
-            surf = openmc.ZTorus(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
+            if isclose(a, 0.0, abs_tol=1e-12) and isclose(b, c):
+                warnings.warn(
+                    f"Degenerate torus surface {s['id']} (A=0, B=C) converted "
+                    f"to an openmc.Sphere of radius {b}."
+                )
+                surf = openmc.Sphere(surface_id=s['id'], x0=x0, y0=y0, z0=z0, r=b)
+            else:
+                cls = getattr(openmc, f"{s['mnemonic'][1].upper()}Torus")
+                surf = cls(surface_id=s['id'], x0=x0, y0=y0, z0=z0, a=a, b=b, c=c)
         elif s['mnemonic'] in ('x', 'y', 'z'):
             axis = s['mnemonic'].upper()
             cls_plane = getattr(openmc, f'{axis}Plane')
@@ -563,14 +565,22 @@ def get_openmc_universes(cells, surfaces, materials, data):
             # Drop parentheses
             trcl = trcl[1:-1].split()
 
-            vector = tuple(float(c) for c in trcl[:3])
-            c['_region'] = c['_region'].translate(vector, translate_memo)
+            # Get displacement vector
+            vector = np.array([float(c) for c in trcl[:3]])
 
             if len(trcl) > 3:
-                rotation_matrix = np.array([float(x) for x in trcl[3:]]).reshape((3, 3))
+                # If displacement vector origin is -1, reverse displacement vector
+                if len(trcl) == 13:
+                    if int(trcl[12]) == -1:
+                        vector *= -1
+                c['_region'] = c['_region'].translate(vector, translate_memo)
+
+                rotation_matrix = np.array([float(x) for x in trcl[3:12]]).reshape((3, 3))
                 if use_degrees:
                     rotation_matrix = np.cos(rotation_matrix * pi/180.0)
                 c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
+            else:
+                c['_region'] = c['_region'].translate(vector, translate_memo)
 
             # Update surfaces dictionary with new surfaces
             for surf_id, surf in c['_region'].get_surfaces().items():
@@ -767,8 +777,7 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 lattice.dimension = shape
 
                 # Universe IDs array as ([z], y, x)
-                univ_ids = np.asarray(univ_ids, dtype=int)
-                univ_ids.shape = shape[::-1]
+                univ_ids = np.asarray(univ_ids, dtype=int).reshape(shape[::-1])
 
                 # Depending on the order of the surfaces listed, it may be
                 # necessary to flip some axes
@@ -846,8 +855,13 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 if ftrans is not None:
                     ftrans = ftrans.split()
                     if len(ftrans) > 3:
-                        cell.translation = tuple(float(x) for x in ftrans[:3])
-                        rotation_matrix = np.array([float(x) for x in ftrans[3:]]).reshape((3, 3))
+                        vector = np.array([float(x) for x in ftrans[:3]])
+                        if len(ftrans) == 13:
+                            if int(ftrans[12]) == -1:
+                                vector *= -1
+
+                        cell.translation = tuple(vector)
+                        rotation_matrix = np.array([float(x) for x in ftrans[3:12]]).reshape((3, 3))
                         if use_degrees:
                             rotation_matrix = np.cos(rotation_matrix * pi/180.0)
                         cell.rotation = rotation_matrix
