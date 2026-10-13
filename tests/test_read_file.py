@@ -19,6 +19,22 @@ def test_read_not_found():
         mcnp_str_to_model(deck)
 
 
+def test_dont_read_comments():
+    deck = textwrap.dedent("""
+        title
+        c The next line would point to an invalid file
+        c read file=/badfile.path
+        1 0 -1
+        
+        c The next line would also point to an invalid file
+        1 so 1.0  $ read file=/badfile.path
+        
+        c 
+        nps 1
+    """)
+    mcnp_str_to_model(deck)
+
+
 def test_read_recursive():
     reference = expand_read_cards(INPUT_DIR / "testReadReference.imcnp")
     trial = expand_read_cards(INPUT_DIR / "testRead.imcnp")

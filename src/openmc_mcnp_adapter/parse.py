@@ -26,12 +26,12 @@ _CELL_PARAMETERS_RE = re.compile(rf"""
 )
 
 _READ_RE = re.compile(r"""
-    ^               # Beginning of line
+    ^\s*(?!c\b)     # Beginning of line that is not a comment line
     \s*read         # Keyword
     \s.*?file       # Everything up to filename
     \s*=\s*         # = sign (required) with optional spaces
-    (\S+)           # The file name is anything without whitespace
-    .*              # Anything else until end-of-line
+    ([^$\s]+)       # The file name stops at whitespace or $
+    [^$\n]*         # Anything else until end-of-line or $
 """, re.IGNORECASE | re.VERBOSE | re.MULTILINE
 )
 
