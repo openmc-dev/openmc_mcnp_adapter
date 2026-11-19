@@ -552,35 +552,53 @@ def get_openmc_universes(cells, surfaces, materials, data):
             if 'fill' in c['parameters']:
                 # TODO: Check for existing transformations on the fill
                 fill = c['parameters']['fill']
+                # A bare 'TRCL=n' reference to a TR card has to be wrapped in
+                # parentheses to be recognized as a fill transformation
+                ftrcl = trcl if trcl.startswith('(') else f'({trcl})'
                 if use_degrees:
-                    c['parameters']['*fill'] = f'{fill} {trcl}'
+                    c['parameters']['*fill'] = f'{fill} {ftrcl}'
                     c['parameters'].pop('fill')
                 else:
-                    c['parameters']['fill'] = f'{fill} {trcl}'
+                    c['parameters']['fill'] = f'{fill} {ftrcl}'
 
-            if not trcl.startswith('('):
-                raise NotImplementedError(
-                    'TRn card not supported (cell {}).'.format(c['id']))
+            if trcl.startswith('('):
+                # Drop parentheses
+                trcl = trcl[1:-1].split()
 
-            # Drop parentheses
-            trcl = trcl[1:-1].split()
+                # Get displacement vector
+                vector = np.array([float(x) for x in trcl[:3]])
 
-            # Get displacement vector
-            vector = np.array([float(c) for c in trcl[:3]])
+                if len(trcl) > 3:
+                    # If displacement vector origin is -1, reverse displacement
+                    # vector
+                    if len(trcl) == 13:
+                        if int(trcl[12]) == -1:
+                            vector *= -1
 
-            if len(trcl) > 3:
-                # If displacement vector origin is -1, reverse displacement vector
-                if len(trcl) == 13:
-                    if int(trcl[12]) == -1:
-                        vector *= -1
-                c['_region'] = c['_region'].translate(vector, translate_memo)
-
-                rotation_matrix = np.array([float(x) for x in trcl[3:12]]).reshape((3, 3))
-                if use_degrees:
-                    rotation_matrix = np.cos(rotation_matrix * pi/180.0)
-                c['_region'] = c['_region'].rotate(rotation_matrix.T, pivot=vector)
+                    rotation = np.array([float(x) for x in trcl[3:12]]).reshape((3, 3)).T
+                    if use_degrees:
+                        rotation = np.cos(rotation * pi/180.0)
+                else:
+                    rotation = None
             else:
-                c['_region'] = c['_region'].translate(vector, translate_memo)
+                # 'TRCL=n' refers to the n-th TR card. Note that whether angles
+                # are given in degrees is determined by the TR card itself, so
+                # use_degrees does not apply here.
+                try:
+                    tr_num = int(trcl)
+                except ValueError:
+                    raise ValueError(
+                        'Invalid TRCL specification for cell {}: {}'
+                        .format(c['id'], trcl))
+                if tr_num not in data['tr']:
+                    raise ValueError(
+                        'Cell {} refers to TR{} but no such transformation '
+                        'card was found.'.format(c['id'], tr_num))
+                vector, rotation = data['tr'][tr_num]
+
+            c['_region'] = c['_region'].translate(vector, translate_memo)
+            if rotation is not None:
+                c['_region'] = c['_region'].rotate(rotation, pivot=vector)
 
             # Update surfaces dictionary with new surfaces
             for surf_id, surf in c['_region'].get_surfaces().items():

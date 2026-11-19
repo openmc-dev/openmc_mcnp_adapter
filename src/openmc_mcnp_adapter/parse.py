@@ -284,6 +284,16 @@ def parse_data(section):
             values = g[2].split()
             if len(values) >= 3:
                 displacement = np.array([float(x) for x in values[:3]])
+
+                # With 9 values, the 6 rotation entries describe a rotation in
+                # the x-y plane. This is equivalent to the 12-value form with
+                # the final three entries leaving the z-axis unchanged, i.e.
+                # (90, 90, 0) in degrees or (0, 0, 1) as direction cosines.
+                if len(values) == 9:
+                    if use_degrees:
+                        values = values + ['90.0', '90.0', '0.0']
+                    else:
+                        values = values + ['0.0', '0.0', '1.0']
             if len(values) >= 12:
                 if len(values) == 13:
                     if int(values[12]) == -1:

@@ -1,7 +1,8 @@
 from textwrap import dedent
 
-from pytest import mark, approx, param
+from pytest import mark, approx, param, raises
 from openmc_mcnp_adapter import mcnp_str_to_model
+from openmc_mcnp_adapter.parse import parse_data
 
 
 @mark.parametrize("whitespace", ["", " ", "\t"])
@@ -202,6 +203,118 @@ def test_fill_transformation(keywords):
     assert geometry.find((2.0, 0.0, 0.0))[-1] is cells[2]
     assert geometry.find((4.0, 0.0, 0.0))[-1] is cells[3]
     assert geometry.find((0.0, 0.0, 0.0))[-1] is cells[3]
+
+
+@mark.parametrize(
+    "trcl,tr_card",
+    [
+        # Pure translation along x
+        ("TRCL=4", "tr4 2.0 0.0 0.0"),
+        # Translation plus identity rotation, cosine and degree forms
+        ("TRCL=4", "tr4 2.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0"),
+        ("TRCL=4", "*tr4 2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0"),
+        # The asterisk on TRCL is irrelevant when referring to a TR card
+        ("*TRCL=4", "*tr4 2.0 0.0 0.0 0.0 90.0 90.0 90.0 0.0 90.0 90.0 90.0 0.0"),
+        # m = -1 reverses the displacement vector
+        ("TRCL=4", "tr4 -2.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 -1"),
+    ]
+)
+def test_trcl_tr_card(trcl, tr_card):
+    """A cell TRCL that refers to a TR card by number."""
+    mcnp_str = dedent(f"""
+    title
+    1 0 -1 {trcl}
+
+    1 rpp -1.0 1.0 -1.0 1.0 -1.0 1.0
+
+    m1   1001.80c  1.0
+    {tr_card}
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    cell = model.geometry.get_all_cells()[1]
+
+    # The box should have been shifted to be centered on x = 2
+    assert (2.0, 0.0, 0.0) in cell.region
+    assert (2.9, 0.9, 0.9) in cell.region
+    assert (0.0, 0.0, 0.0) not in cell.region
+    assert (4.0, 0.0, 0.0) not in cell.region
+
+
+def test_trcl_tr_card_rotation():
+    """A TR card referenced by TRCL that applies a real (90 deg) rotation."""
+    mcnp_str = dedent("""
+    title
+    1 0 -1 TRCL=7
+
+    1 rpp -4.0 4.0 -1.0 1.0 -1.0 1.0
+
+    m1   1001.80c  1.0
+    *tr7 0.0 0.0 0.0 90.0 0.0 90.0 180.0 90.0 90.0 90.0 90.0 0.0
+    """)
+    model = mcnp_str_to_model(mcnp_str)
+    cell = model.geometry.get_all_cells()[1]
+
+    # The box, long in x, should now be long in y
+    assert (0.0, 3.0, 0.0) in cell.region
+    assert (0.0, -3.0, 0.0) in cell.region
+    assert (3.0, 0.0, 0.0) not in cell.region
+    assert (-3.0, 0.0, 0.0) not in cell.region
+
+
+@mark.parametrize(
+    "short,full",
+    [
+        # 60 degree rotation about z, as direction cosines
+        (
+            "tr8 1.0 2.0 3.0  0.5 0.8660254 0.0  -0.8660254 0.5 0.0",
+            "tr8 1.0 2.0 3.0  0.5 0.8660254 0.0  -0.8660254 0.5 0.0  0.0 0.0 1.0",
+        ),
+        # 30 degree rotation about z, in degrees
+        (
+            "*tr8 1.0 2.0 3.0  30.0 60.0 90.0  120.0 30.0 90.0",
+            "*tr8 1.0 2.0 3.0  30.0 60.0 90.0  120.0 30.0 90.0  90.0 90.0 0.0",
+        ),
+    ]
+)
+def test_tr_card_nine_values(short, full):
+    """A TR card with 9 values implies an x-y plane rotation."""
+    def transform(tr_card):
+        mcnp_str = dedent(f"""
+        title
+        1 0 -1 TRCL=8
+
+        1 rpp -4.0 4.0 -1.0 1.0 -1.0 1.0
+
+        m1   1001.80c  1.0
+        {tr_card}
+        """)
+        return mcnp_str_to_model(mcnp_str)
+
+    displacement_short, rotation_short = parse_data(short)['tr'][8]
+    displacement_full, rotation_full = parse_data(full)['tr'][8]
+
+    assert displacement_short == approx(displacement_full)
+    assert rotation_short == approx(rotation_full)
+
+    # And the resulting geometry agrees
+    cell_short = transform(short).geometry.get_all_cells()[1]
+    cell_full = transform(full).geometry.get_all_cells()[1]
+    for point in [(1.0, 2.0, 3.0), (4.0, 5.0, 3.0), (0.0, 0.0, 0.0), (1.0, 2.0, 5.0)]:
+        assert (point in cell_short.region) == (point in cell_full.region)
+
+
+def test_trcl_tr_card_undefined():
+    """Referring to a TR card that does not exist gives a clear error."""
+    mcnp_str = dedent("""
+    title
+    1 0 -1 TRCL=9
+
+    1 so 1.0
+
+    m1   1001.80c  1.0
+    """)
+    with raises(ValueError, match="TR9"):
+        mcnp_str_to_model(mcnp_str)
 
 
 def test_cell_volume():
