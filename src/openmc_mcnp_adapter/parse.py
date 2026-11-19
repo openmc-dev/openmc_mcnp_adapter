@@ -282,25 +282,30 @@ def parse_data(section):
             use_degrees = g[0] is not None
             tr_num = int(g[1])
             values = g[2].split()
-            if len(values) >= 3:
-                displacement = np.array([float(x) for x in values[:3]])
+            if len(values) < 3:
+                raise ValueError(
+                    'TR{} card needs at least a displacement vector: {}'
+                    .format(tr_num, line.strip()))
+            displacement = np.array([float(x) for x in values[:3]])
 
-                # With 9 values, the 6 rotation entries describe a rotation in
-                # the x-y plane. This is equivalent to the 12-value form with
-                # the final three entries leaving the z-axis unchanged, i.e.
-                # (90, 90, 0) in degrees or (0, 0, 1) as direction cosines.
-                if len(values) == 9:
-                    if use_degrees:
-                        values = values + ['90.0', '90.0', '0.0']
-                    else:
-                        values = values + ['0.0', '0.0', '1.0']
-            if len(values) >= 12:
-                if len(values) == 13:
-                    if int(values[12]) == -1:
-                        displacement *= -1
-                rotation = np.array([float(x) for x in values[3:12]]).reshape((3,3)).T
+            # The rotation matrix may be given either in full (9 entries) or
+            # with only two of its three vectors (6 entries), in which case
+            # MCNP derives the remaining one from their cross product.
+            n_rot = 9 if len(values) >= 12 else (6 if len(values) >= 9 else 0)
+            if n_rot:
+                rot = np.array([float(x) for x in values[3:3 + n_rot]])
                 if use_degrees:
-                    rotation = np.cos(rotation * pi/180.0)
+                    rot = np.cos(rot * pi/180.0)
+                rot = rot.reshape((n_rot // 3, 3))
+                if n_rot == 6:
+                    rot = np.vstack((rot, np.cross(rot[0], rot[1])))
+                rotation = rot.T
+
+                # If the displacement vector origin is -1, reverse displacement
+                # vector
+                i_m = 3 + n_rot
+                if len(values) == i_m + 1 and int(values[i_m]) == -1:
+                    displacement *= -1
             else:
                 rotation = None
             data['tr'][tr_num] = (displacement, rotation)

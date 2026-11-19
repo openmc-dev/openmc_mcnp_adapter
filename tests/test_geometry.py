@@ -1,5 +1,6 @@
 from textwrap import dedent
 
+import numpy as np
 from pytest import mark, approx, param, raises
 from openmc_mcnp_adapter import mcnp_str_to_model
 from openmc_mcnp_adapter.parse import parse_data
@@ -274,10 +275,26 @@ def test_trcl_tr_card_rotation():
             "*tr8 1.0 2.0 3.0  30.0 60.0 90.0  120.0 30.0 90.0",
             "*tr8 1.0 2.0 3.0  30.0 60.0 90.0  120.0 30.0 90.0  90.0 90.0 0.0",
         ),
+        # A rotation that does not leave the z-axis fixed: the derived vector
+        # is the cross product of the two given ones, here (0, -1, 0)
+        (
+            "tr8 1.0 2.0 3.0  1.0 0.0 0.0  0.0 0.0 1.0",
+            "tr8 1.0 2.0 3.0  1.0 0.0 0.0  0.0 0.0 1.0  0.0 -1.0 0.0",
+        ),
+        # Same, in degrees
+        (
+            "*tr8 1.0 2.0 3.0  0.0 90.0 90.0  90.0 90.0 0.0",
+            "*tr8 1.0 2.0 3.0  0.0 90.0 90.0  90.0 90.0 0.0  90.0 180.0 90.0",
+        ),
+        # The m = -1 flag sits right after a 6-entry rotation matrix
+        (
+            "tr8 -1.0 -2.0 -3.0  0.5 0.8660254 0.0  -0.8660254 0.5 0.0  -1",
+            "tr8 -1.0 -2.0 -3.0  0.5 0.8660254 0.0  -0.8660254 0.5 0.0  0.0 0.0 1.0  -1",
+        ),
     ]
 )
 def test_tr_card_nine_values(short, full):
-    """A TR card with 9 values implies an x-y plane rotation."""
+    """A 6-entry rotation matrix is completed with the cross product."""
     def transform(tr_card):
         mcnp_str = dedent(f"""
         title
@@ -301,6 +318,64 @@ def test_tr_card_nine_values(short, full):
     cell_full = transform(full).geometry.get_all_cells()[1]
     for point in [(1.0, 2.0, 3.0), (4.0, 5.0, 3.0), (0.0, 0.0, 0.0), (1.0, 2.0, 5.0)]:
         assert (point in cell_short.region) == (point in cell_full.region)
+
+
+def test_tr_card_six_entry_rotation_is_proper():
+    """A 6-entry rotation matrix must not be completed into a singular one."""
+    # The two given vectors are x and z; the derived one has to be -y rather
+    # than a repeat of z, which would make the matrix singular
+    _, rotation = parse_data("tr4 0.0 0.0 0.0  1.0 0.0 0.0  0.0 0.0 1.0")['tr'][4]
+    assert np.linalg.det(rotation) == approx(1.0)
+    assert rotation.T @ rotation == approx(np.identity(3))
+
+
+@mark.parametrize(
+    "cell_card,extra_cards,match",
+    [
+        # Composing with a transformation already on the fill
+        ("1 0 -1 FILL=2 (1.0 0.0 0.0) TRCL=4", "", "existing FILL"),
+        ("1 0 -1 FILL=2 (1.0 0.0 0.0) TRCL=(2.0 0.0 0.0)", "", "existing FILL"),
+        # '*FILL' is not picked up by the fill handling
+        ("1 0 -1 *FILL=2 (1.0 0.0 0.0) TRCL=4", "", "[*]FILL"),
+        ("1 0 -1 *FILL=2 (1.0 0.0 0.0) TRCL=(2.0 0.0 0.0)", "", "[*]FILL"),
+    ]
+)
+def test_trcl_unsupported_fill_combinations(cell_card, extra_cards, match):
+    """TRCL combinations that would silently misplace a fill must raise."""
+    mcnp_str = dedent(f"""
+    title
+    {cell_card}
+    2 0 -2 u=2
+
+    1 so 10.0
+    2 so 1.0
+
+    m1   1001.80c  1.0
+    tr4  2.0 0.0 0.0
+    {extra_cards}
+    """)
+    with raises(NotImplementedError, match=match):
+        mcnp_str_to_model(mcnp_str)
+
+
+@mark.parametrize("trcl", ["TRCL=4", "TRCL=(2.0 0.0 0.0)"])
+def test_trcl_on_lattice_unsupported(trcl):
+    """TRCL on a lattice cell must raise rather than mangle the array spec."""
+    mcnp_str = dedent(f"""
+    title
+    1 0 -1 u=1 lat=1 fill=2 {trcl}
+    2 0 -2 u=2
+    3 0 -3 fill=1
+
+    1 rpp -1.0 1.0 -1.0 1.0 -1.0 1.0
+    2 so 0.5
+    3 so 20.0
+
+    m1   1001.80c  1.0
+    tr4  2.0 0.0 0.0
+    """)
+    with raises(NotImplementedError, match="lattice"):
+        mcnp_str_to_model(mcnp_str)
 
 
 def test_trcl_tr_card_undefined():

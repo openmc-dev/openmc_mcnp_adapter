@@ -548,10 +548,29 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 trcl = c['parameters']['*trcl'].strip()
                 use_degrees = True
 
-            # Apply transformation to fill
-            if 'fill' in c['parameters']:
-                # TODO: Check for existing transformations on the fill
+            # Apply transformation to fill. The transformation is passed along
+            # as an extra group on the fill specification, which can only be
+            # done when the fill is a plain universe number. Composing it with
+            # a transformation that is already there, or with a lattice array,
+            # is not supported; raise rather than silently producing a geometry
+            # whose contents do not follow its boundary.
+            # TODO: Compose transformations instead of appending a group
+            if 'fill' in c['parameters'] or '*fill' in c['parameters']:
+                if 'lat' in c['parameters']:
+                    raise NotImplementedError(
+                        'TRCL on a lattice cell is not supported (cell {}).'
+                        .format(c['id']))
+                if '*fill' in c['parameters']:
+                    raise NotImplementedError(
+                        'TRCL combined with *FILL is not supported (cell {}).'
+                        .format(c['id']))
+
                 fill = c['parameters']['fill']
+                if '(' in fill:
+                    raise NotImplementedError(
+                        'TRCL combined with an existing FILL transformation '
+                        'is not supported (cell {}).'.format(c['id']))
+
                 # A bare 'TRCL=n' reference to a TR card has to be wrapped in
                 # parentheses to be recognized as a fill transformation
                 ftrcl = trcl if trcl.startswith('(') else f'({trcl})'
