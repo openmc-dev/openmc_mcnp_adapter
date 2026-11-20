@@ -320,6 +320,63 @@ def test_tr_card_nine_values(short, full):
         assert (point in cell_short.region) == (point in cell_full.region)
 
 
+@mark.parametrize(
+    "reversed_card,equivalent",
+    [
+        # 90 degree rotation about z. The main origin sits at (1, 0, 0) in the
+        # auxiliary system, which puts the auxiliary origin at (0, -1, 0) in
+        # the main one -- negating alone would wrongly give (-1, 0, 0).
+        (
+            "tr8 1.0 0.0 0.0  0.0 1.0 0.0  -1.0 0.0 0.0  0.0 0.0 1.0  -1",
+            "tr8 0.0 -1.0 0.0  0.0 1.0 0.0  -1.0 0.0 0.0  0.0 0.0 1.0",
+        ),
+        # Same, with a 6-entry rotation matrix
+        (
+            "tr8 1.0 0.0 0.0  0.0 1.0 0.0  -1.0 0.0 0.0  -1",
+            "tr8 0.0 -1.0 0.0  0.0 1.0 0.0  -1.0 0.0 0.0",
+        ),
+        # Same, in degrees
+        (
+            "*tr8 1.0 0.0 0.0  90.0 0.0 90.0  180.0 90.0 90.0  90.0 90.0 0.0  -1",
+            "*tr8 0.0 -1.0 0.0  90.0 0.0 90.0  180.0 90.0 90.0  90.0 90.0 0.0",
+        ),
+        # An identity rotation must keep behaving as a plain negation
+        (
+            "tr8 -2.0 1.0 0.0  1.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0 1.0  -1",
+            "tr8 2.0 -1.0 0.0  1.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0 1.0",
+        ),
+    ]
+)
+def test_tr_card_reversed_displacement(reversed_card, equivalent):
+    """m = -1 has to rotate the displacement, not just negate it."""
+    displacement, rotation = parse_data(reversed_card)['tr'][8]
+    displacement_ref, rotation_ref = parse_data(equivalent)['tr'][8]
+
+    assert rotation == approx(rotation_ref)
+    assert displacement == approx(displacement_ref)
+
+    # The main origin must land back at the vector given on the m = -1 card
+    o_prime = np.array([float(x) for x in reversed_card.split()[1:4]])
+    assert rotation @ o_prime + displacement == approx(np.zeros(3))
+
+
+@mark.parametrize(
+    "tr_card",
+    [
+        # MCNP's implicit-exponent notation, here on the rotation entries
+        "tr8 1.0 2.0 3.0  1.0+0 0.0 0.0  0.0 1.0+0 0.0  0.0 0.0 1.0+0",
+        "tr8 1.0 2.0 3.0  1.0+0 0.0 0.0  0.0 1.0+0 0.0",
+        # and on the displacement
+        "tr8 1.0+0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0",
+    ]
+)
+def test_tr_card_implicit_exponent(tr_card):
+    """TR card entries may use MCNP's exponent notation without an 'e'."""
+    displacement, rotation = parse_data(tr_card)['tr'][8]
+    assert displacement == approx([1.0, 2.0, 3.0])
+    assert rotation == approx(np.identity(3))
+
+
 def test_tr_card_six_entry_rotation_is_proper():
     """A 6-entry rotation matrix must not be completed into a singular one."""
     # The two given vectors are x and z; the derived one has to be -y rather
@@ -375,6 +432,71 @@ def test_trcl_on_lattice_unsupported(trcl):
     tr4  2.0 0.0 0.0
     """)
     with raises(NotImplementedError, match="lattice"):
+        mcnp_str_to_model(mcnp_str)
+
+
+#: A 90 degree rotation about z, which makes m = -1 and the 6-entry shorthand
+#: behave differently from a plain negation and a fixed z-axis respectively
+_ROT9 = "0.0 1.0 0.0  -1.0 0.0 0.0  0.0 0.0 1.0"
+_ROT6 = "0.0 1.0 0.0  -1.0 0.0 0.0"
+
+
+@mark.parametrize(
+    "inline,tr_card",
+    [
+        # m = -1 has to be applied identically either way
+        (f"(1.0 0.0 0.0 {_ROT9} -1)", f"tr4 1.0 0.0 0.0 {_ROT9} -1"),
+        (f"(1.0 0.0 0.0 {_ROT6} -1)", f"tr4 1.0 0.0 0.0 {_ROT6} -1"),
+        # as does the 6-entry rotation shorthand
+        (f"(1.0 2.0 3.0 {_ROT6})", f"tr4 1.0 2.0 3.0 {_ROT6}"),
+        # and MCNP's implicit-exponent notation
+        ("(1.0+0 2.0 3.0)", "tr4 1.0+0 2.0 3.0"),
+    ]
+)
+def test_inline_and_tr_card_transforms_agree(inline, tr_card):
+    """An inline TRCL/FILL transform must match the same one on a TR card."""
+    def build(trcl, extra):
+        return mcnp_str_to_model(dedent(f"""
+        title
+        1 0 -1 {trcl}
+        2 0 -2 u=10
+
+        1 rpp -4.0 4.0 -1.0 1.0 -1.0 1.0
+        2 so 0.5
+
+        m1   1001.80c  1.0
+        {extra}
+        """))
+
+    # The cell region itself
+    region_inline = build(f"TRCL={inline}", "").geometry.get_all_cells()[1].region
+    region_tr = build("TRCL=4", tr_card).geometry.get_all_cells()[1].region
+    for a, b in zip(region_inline.bounding_box, region_tr.bounding_box):
+        assert a == approx(b)
+
+    # And the transformation applied to a fill
+    cell_inline = build(f"FILL=10 {inline}", "").geometry.get_all_cells()[1]
+    cell_tr = build("FILL=10 (4)", tr_card).geometry.get_all_cells()[1]
+    assert cell_inline.translation == approx(cell_tr.translation)
+    if cell_tr.rotation is None:
+        assert cell_inline.rotation is None
+    else:
+        assert cell_inline.rotation == approx(cell_tr.rotation)
+
+
+def test_fill_tr_card_undefined():
+    """A fill referring to a missing TR card gives a clear error."""
+    mcnp_str = dedent("""
+    title
+    1 0 -1 FILL=10 (9)
+    2 0 -2 u=10
+
+    1 so 10.0
+    2 so 1.0
+
+    m1   1001.80c  1.0
+    """)
+    with raises(ValueError, match="TR9"):
         mcnp_str_to_model(mcnp_str)
 
 

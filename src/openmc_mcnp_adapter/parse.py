@@ -220,6 +220,65 @@ def parse_surface(line):
     return surface
 
 
+def parse_transform(values, use_degrees=False):
+    """Parse a coordinate transformation given as a sequence of numbers
+
+    This covers the entries of a TR card as well as an inline transformation
+    given in parentheses on a TRCL or FILL cell parameter, which share the same
+    syntax.
+
+    Parameters
+    ----------
+    values : list of str
+        Displacement vector, optionally followed by a rotation matrix and by a
+        flag indicating which coordinate system the displacement refers to
+    use_degrees : bool
+        Whether the rotation matrix is given as angles in degrees rather than
+        as direction cosines
+
+    Returns
+    -------
+    displacement : numpy.ndarray
+        Displacement vector, as the origin of the auxiliary coordinate system
+        expressed in the main one
+    rotation : numpy.ndarray or None
+        Rotation matrix, or None for a pure translation
+
+    """
+    if len(values) < 3:
+        raise ValueError('Transformation needs at least a displacement '
+                         'vector: {}'.format(' '.join(values)))
+    displacement = np.array([float_(x) for x in values[:3]])
+
+    # The rotation matrix may be given either in full (9 entries) or with only
+    # two of its three vectors (6 entries), in which case MCNP derives the
+    # remaining one from their cross product.
+    n_rot = 9 if len(values) >= 12 else (6 if len(values) >= 9 else 0)
+    if n_rot:
+        rot = np.array([float_(x) for x in values[3:3 + n_rot]])
+        if use_degrees:
+            rot = np.cos(rot * pi/180.0)
+        rot = rot.reshape((n_rot // 3, 3))
+        if n_rot == 6:
+            rot = np.vstack((rot, np.cross(rot[0], rot[1])))
+        rotation = rot.T
+    else:
+        rotation = None
+
+    # With m = -1, the displacement vector gives the origin of the main
+    # coordinate system expressed in the auxiliary one. Everything downstream
+    # expects the opposite convention, O = -B.O', so the rotation has to be
+    # applied in addition to negating the vector.
+    i_m = 3 + n_rot
+    if len(values) == i_m + 1 and int(values[i_m]) == -1:
+        if rotation is None:
+            displacement = -displacement
+        else:
+            displacement = -(rotation @ displacement)
+
+    return displacement, rotation
+
+
 def parse_data(section):
     """Parse data block into dictionary of information
 
@@ -281,34 +340,11 @@ def parse_data(section):
             g = _TR_RE.match(line).groups()
             use_degrees = g[0] is not None
             tr_num = int(g[1])
-            values = g[2].split()
-            if len(values) < 3:
-                raise ValueError(
-                    'TR{} card needs at least a displacement vector: {}'
-                    .format(tr_num, line.strip()))
-            displacement = np.array([float(x) for x in values[:3]])
-
-            # The rotation matrix may be given either in full (9 entries) or
-            # with only two of its three vectors (6 entries), in which case
-            # MCNP derives the remaining one from their cross product.
-            n_rot = 9 if len(values) >= 12 else (6 if len(values) >= 9 else 0)
-            if n_rot:
-                rot = np.array([float(x) for x in values[3:3 + n_rot]])
-                if use_degrees:
-                    rot = np.cos(rot * pi/180.0)
-                rot = rot.reshape((n_rot // 3, 3))
-                if n_rot == 6:
-                    rot = np.vstack((rot, np.cross(rot[0], rot[1])))
-                rotation = rot.T
-
-                # If the displacement vector origin is -1, reverse displacement
-                # vector
-                i_m = 3 + n_rot
-                if len(values) == i_m + 1 and int(values[i_m]) == -1:
-                    displacement *= -1
-            else:
-                rotation = None
-            data['tr'][tr_num] = (displacement, rotation)
+            try:
+                data['tr'][tr_num] = parse_transform(g[2].split(), use_degrees)
+            except ValueError:
+                raise ValueError('Could not parse TR card: {}'
+                                 .format(line.strip()))
         else:
             words = line.split()
             if words:

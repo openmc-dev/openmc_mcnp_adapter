@@ -21,7 +21,7 @@ from openmc.model.surface_composite import (
 )
 from openmc.model import surface_composite
 
-from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
+from .parse import parse, parse_transform, _COMPLEMENT_RE, _CELL_FILL_RE
 
 
 # The facet number corresponding to the SurfaceComposite's surface by
@@ -581,24 +581,14 @@ def get_openmc_universes(cells, surfaces, materials, data):
                     c['parameters']['fill'] = f'{fill} {ftrcl}'
 
             if trcl.startswith('('):
-                # Drop parentheses
-                trcl = trcl[1:-1].split()
-
-                # Get displacement vector
-                vector = np.array([float(x) for x in trcl[:3]])
-
-                if len(trcl) > 3:
-                    # If displacement vector origin is -1, reverse displacement
-                    # vector
-                    if len(trcl) == 13:
-                        if int(trcl[12]) == -1:
-                            vector *= -1
-
-                    rotation = np.array([float(x) for x in trcl[3:12]]).reshape((3, 3)).T
-                    if use_degrees:
-                        rotation = np.cos(rotation * pi/180.0)
-                else:
-                    rotation = None
+                # Drop parentheses and parse the inline transformation
+                try:
+                    vector, rotation = parse_transform(trcl[1:-1].split(),
+                                                       use_degrees)
+                except ValueError:
+                    raise ValueError(
+                        'Invalid TRCL specification for cell {}: {}'
+                        .format(c['id'], trcl))
             else:
                 # 'TRCL=n' refers to the n-th TR card. Note that whether angles
                 # are given in degrees is determined by the TR card itself, so
@@ -891,26 +881,29 @@ def get_openmc_universes(cells, surfaces, materials, data):
                 # Set fill transformation
                 if ftrans is not None:
                     ftrans = ftrans.split()
-                    if len(ftrans) > 3:
-                        vector = np.array([float(x) for x in ftrans[:3]])
-                        if len(ftrans) == 13:
-                            if int(ftrans[12]) == -1:
-                                vector *= -1
-
-                        cell.translation = tuple(vector)
-                        rotation_matrix = np.array([float(x) for x in ftrans[3:12]]).reshape((3, 3))
-                        if use_degrees:
-                            rotation_matrix = np.cos(rotation_matrix * pi/180.0)
-                        cell.rotation = rotation_matrix
-                    elif len(ftrans) < 3:
-                        assert len(ftrans) == 1
+                    if len(ftrans) == 1:
+                        # A single entry refers to the n-th TR card
                         tr_num = int(ftrans[0])
+                        if tr_num not in data['tr']:
+                            raise ValueError(
+                                'Cell {} is filled with a transformation TR{} '
+                                'but no such transformation card was found.'
+                                .format(c['id'], tr_num))
                         translation, rotation = data['tr'][tr_num]
-                        cell.translation = translation
-                        if rotation is not None:
-                            cell.rotation = rotation.T
                     else:
-                        cell.translation = tuple(float(x) for x in ftrans)
+                        try:
+                            translation, rotation = parse_transform(ftrans,
+                                                                    use_degrees)
+                        except ValueError:
+                            raise ValueError(
+                                'Invalid FILL transformation for cell {}: {}'
+                                .format(c['id'], ' '.join(ftrans)))
+
+                    cell.translation = tuple(translation)
+                    if rotation is not None:
+                        # OpenMC's cell rotation matrix is the transpose of the
+                        # one used for transforming a region
+                        cell.rotation = rotation.T
 
         elif c['material'] > 0:
             cell.fill = mat
