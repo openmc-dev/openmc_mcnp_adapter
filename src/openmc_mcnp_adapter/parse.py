@@ -220,6 +220,87 @@ def parse_surface(line):
     return surface
 
 
+# Number of rotation matrix entries for each supported transformation length,
+# which is the displacement vector plus an optional rotation matrix plus an
+# optional m flag
+_N_ROTATION_ENTRIES = {3: 0, 4: 0, 9: 6, 10: 6, 12: 9, 13: 9}
+
+
+def parse_transform(values, use_degrees=False):
+    """Parse a coordinate transformation given as a sequence of numbers
+
+    This covers the entries of a TR card as well as an inline transformation
+    given in parentheses on a TRCL or FILL cell parameter, which share the same
+    syntax.
+
+    Parameters
+    ----------
+    values : list of str
+        Displacement vector, optionally followed by a rotation matrix and by a
+        flag indicating which coordinate system the displacement refers to
+    use_degrees : bool
+        Whether the rotation matrix is given as angles in degrees rather than
+        as direction cosines
+
+    Returns
+    -------
+    displacement : numpy.ndarray
+        Displacement vector, as the origin of the auxiliary coordinate system
+        expressed in the main one
+    rotation : numpy.ndarray or None
+        Rotation matrix, or None for a pure translation
+
+    Raises
+    ------
+    ValueError
+        If the number of entries does not correspond to a supported form of
+        the transformation
+
+    """
+    if len(values) < 3:
+        raise ValueError('Transformation needs at least a displacement '
+                         'vector: {}'.format(' '.join(values)))
+
+    # The rotation matrix may be omitted, given with only two of its three
+    # vectors (6 entries), in which case MCNP derives the remaining one from
+    # their cross product, or given in full (9 entries). Each of those may be
+    # followed by the m flag. MCNP also accepts 3- and 5-entry rotation
+    # shorthands, which are not implemented here; reject any count that is not
+    # understood rather than silently dropping the entries that follow the
+    # displacement vector.
+    n_rot = _N_ROTATION_ENTRIES.get(len(values))
+    if n_rot is None:
+        raise ValueError('Unsupported number of entries ({}) in '
+                         'transformation: {}'.format(len(values),
+                                                     ' '.join(values)))
+
+    displacement = np.array([float_(x) for x in values[:3]])
+
+    if n_rot:
+        rot = np.array([float_(x) for x in values[3:3 + n_rot]])
+        if use_degrees:
+            rot = np.cos(rot * pi/180.0)
+        rot = rot.reshape((n_rot // 3, 3))
+        if n_rot == 6:
+            rot = np.vstack((rot, np.cross(rot[0], rot[1])))
+        rotation = rot.T
+    else:
+        rotation = None
+
+    # With m = -1, the displacement vector gives the origin of the main
+    # coordinate system expressed in the auxiliary one. Everything downstream
+    # expects the opposite convention, O = -B.O', so the rotation has to be
+    # applied in addition to negating the vector.
+    i_m = 3 + n_rot
+    if len(values) == i_m + 1 and int(values[i_m]) == -1:
+        if rotation is None:
+            displacement = -displacement
+        else:
+            displacement = -(rotation @ displacement)
+
+    return displacement, rotation
+
+
 def parse_data(section):
     """Parse data block into dictionary of information
 
@@ -281,19 +362,11 @@ def parse_data(section):
             g = _TR_RE.match(line).groups()
             use_degrees = g[0] is not None
             tr_num = int(g[1])
-            values = g[2].split()
-            if len(values) >= 3:
-                displacement = np.array([float(x) for x in values[:3]])
-            if len(values) >= 12:
-                if len(values) == 13:
-                    if int(values[12]) == -1:
-                        displacement *= -1
-                rotation = np.array([float(x) for x in values[3:12]]).reshape((3,3)).T
-                if use_degrees:
-                    rotation = np.cos(rotation * pi/180.0)
-            else:
-                rotation = None
-            data['tr'][tr_num] = (displacement, rotation)
+            try:
+                data['tr'][tr_num] = parse_transform(g[2].split(), use_degrees)
+            except ValueError:
+                raise ValueError('Could not parse TR card: {}'
+                                 .format(line.strip()))
         else:
             words = line.split()
             if words:
