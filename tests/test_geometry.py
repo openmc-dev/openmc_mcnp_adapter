@@ -3,7 +3,7 @@ from textwrap import dedent
 import numpy as np
 from pytest import mark, approx, param, raises
 from openmc_mcnp_adapter import mcnp_str_to_model
-from openmc_mcnp_adapter.parse import parse_data
+from openmc_mcnp_adapter.parse import parse_data, parse_transform
 
 
 @mark.parametrize("whitespace", ["", " ", "\t"])
@@ -384,6 +384,51 @@ def test_tr_card_six_entry_rotation_is_proper():
     _, rotation = parse_data("tr4 0.0 0.0 0.0  1.0 0.0 0.0  0.0 0.0 1.0")['tr'][4]
     assert np.linalg.det(rotation) == approx(1.0)
     assert rotation.T @ rotation == approx(np.identity(3))
+
+
+@mark.parametrize(
+    "values",
+    [
+        # MCNP's 3- and 5-entry rotation shorthands, which are not implemented
+        "1.0 2.0 3.0  1.0 0.0 0.0",
+        "1.0 2.0 3.0  1.0 0.0 0.0 0.0 1.0",
+        # Rotation matrices with entries missing
+        "1.0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0",
+        "1.0 2.0 3.0  1.0 0.0",
+        # Entries trailing the m flag
+        "1.0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0 1.0  1 0.0",
+    ]
+)
+def test_transform_unsupported_entry_count(values):
+    """Entry counts that are not understood must raise, not be truncated."""
+    with raises(ValueError, match="Unsupported number of entries"):
+        parse_transform(values.split())
+
+
+@mark.parametrize(
+    "values",
+    [
+        # Displacement only, and displacement with the m flag
+        "1.0 2.0 3.0",
+        "1.0 2.0 3.0  1",
+        # Two of the three rotation vectors, without and with the m flag
+        "1.0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0",
+        "1.0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0  1",
+        # The full rotation matrix, without and with the m flag
+        "1.0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0 1.0",
+        "1.0 2.0 3.0  1.0 0.0 0.0  0.0 1.0 0.0  0.0 0.0 1.0  1",
+    ]
+)
+def test_transform_supported_entry_counts(values):
+    """Every supported form is accepted and gives the displacement back."""
+    displacement, _ = parse_transform(values.split())
+    assert displacement == approx([1.0, 2.0, 3.0])
+
+
+def test_tr_card_unsupported_entry_count():
+    """A TR card with an unusable number of entries is reported."""
+    with raises(ValueError, match="Could not parse TR card"):
+        parse_data("tr4 1.0 2.0 3.0  1.0 0.0 0.0")
 
 
 @mark.parametrize(

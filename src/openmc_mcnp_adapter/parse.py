@@ -220,6 +220,12 @@ def parse_surface(line):
     return surface
 
 
+# Number of rotation matrix entries for each supported transformation length,
+# which is the displacement vector plus an optional rotation matrix plus an
+# optional m flag
+_N_ROTATION_ENTRIES = {3: 0, 4: 0, 9: 6, 10: 6, 12: 9, 13: 9}
+
+
 def parse_transform(values, use_degrees=False):
     """Parse a coordinate transformation given as a sequence of numbers
 
@@ -244,16 +250,32 @@ def parse_transform(values, use_degrees=False):
     rotation : numpy.ndarray or None
         Rotation matrix, or None for a pure translation
 
+    Raises
+    ------
+    ValueError
+        If the number of entries does not correspond to a supported form of
+        the transformation
+
     """
     if len(values) < 3:
         raise ValueError('Transformation needs at least a displacement '
                          'vector: {}'.format(' '.join(values)))
+
+    # The rotation matrix may be omitted, given with only two of its three
+    # vectors (6 entries), in which case MCNP derives the remaining one from
+    # their cross product, or given in full (9 entries). Each of those may be
+    # followed by the m flag. MCNP also accepts 3- and 5-entry rotation
+    # shorthands, which are not implemented here; reject any count that is not
+    # understood rather than silently dropping the entries that follow the
+    # displacement vector.
+    n_rot = _N_ROTATION_ENTRIES.get(len(values))
+    if n_rot is None:
+        raise ValueError('Unsupported number of entries ({}) in '
+                         'transformation: {}'.format(len(values),
+                                                     ' '.join(values)))
+
     displacement = np.array([float_(x) for x in values[:3]])
 
-    # The rotation matrix may be given either in full (9 entries) or with only
-    # two of its three vectors (6 entries), in which case MCNP derives the
-    # remaining one from their cross product.
-    n_rot = 9 if len(values) >= 12 else (6 if len(values) >= 9 else 0)
     if n_rot:
         rot = np.array([float_(x) for x in values[3:3 + n_rot]])
         if use_degrees:
